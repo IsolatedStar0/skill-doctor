@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "1.0",
+  "name": "Codex SDK paired Skill knowledge probes",
+  "dataset": "GeniusHTX/SWE-Skills-Bench",
+  "taskKind": "knowledge-probe",
+  "warning": "This measures Skill-grounded planning knowledge, not repository-level SWE task completion.",
+  "probes": [
+    {
+      "skillId": "tdd-workflow",
+      "dimension": "development-process",
+      "assertions": [
+        {
+          "id": "tdd-tests-first",
+          "label": "先编写失败测试再实现",
+          "source": "skill",
+          "anyOf": ["test first", "tests first", "before implementation", "red-green"]
+        },
+        {
+          "id": "tdd-coverage",
+          "label": "覆盖率目标至少 80%",
+          "source": "skill",
+          "anyOf": ["80%", "80 percent"]
+        },
+        {
+          "id": "tdd-boundaries",
+          "label": "验证边界与错误场景",
+          "source": "skill",
+          "anyOf": ["boundary", "edge case", "error scenario"]
+        },
+        {
+          "id": "tdd-calculator-path",
+          "label": "修改 src/calculator.py",
+          "source": "task",
+          "anyOf": ["src/calculator.py"]
+        }
+      ]
+    },
+    {
+      "skillId": "python-observability",
+      "dimension": "application-observability",
+      "assertions": [
+        {
+          "id": "otel-traces",
+          "label": "配置 tracing 与 span",
+          "source": "task",
+          "anyOf": ["tracerprovider", "span", "tracing"]
+        },
+        {
+          "id": "otel-context",
+          "label": "传播 trace context",
+          "source": "task",
+          "anyOf": ["context propagation", "propagate context"]
+        },
+        {
+          "id": "otel-metrics",
+          "label": "采集 metrics",
+          "source": "task",
+          "anyOf": ["metric", "meterprovider"]
+        },
+        {
+          "id": "otel-exceptions",
+          "label": "记录异常和 span status",
+          "source": "skill",
+          "anyOf": ["record_exception", "record exception", "span status"]
+        },
+        {
+          "id": "otel-structured-logs",
+          "label": "使用结构化日志关联 trace",
+          "source": "skill",
+          "anyOf": ["structured log", "trace_id", "trace id"]
+        }
+      ]
+    },
+    {
+      "skillId": "distributed-tracing",
+      "dimension": "distributed-observability",
+      "assertions": [
+        {
+          "id": "collector-pipeline",
+          "label": "覆盖 receiver、processor、exporter",
+          "source": "task",
+          "allOf": ["receiver", "processor", "exporter"]
+        },
+        {
+          "id": "collector-otlp",
+          "label": "配置 OTLP gRPC/HTTP",
+          "source": "task",
+          "anyOf": ["otlp", "grpc", "http"]
+        },
+        {
+          "id": "collector-batch",
+          "label": "使用 batch processor",
+          "source": "skill",
+          "anyOf": ["batch processor", "batch"]
+        },
+        {
+          "id": "collector-memory",
+          "label": "使用 memory limiter",
+          "source": "skill",
+          "anyOf": ["memory limiter", "memory_limiter"]
+        },
+        {
+          "id": "collector-validation",
+          "label": "验证配置和可观测输出",
+          "source": "skill",
+          "anyOf": ["validate", "validation", "health check"]
+        }
+      ]
+    }
+  ]
+}

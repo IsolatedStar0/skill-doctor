@@ -1,0 +1,45 @@
+{
+  "session": {
+    "id": "codex-smoke-content-gap",
+    "name": "Codex Skill smoke test",
+    "summary": "Codex 正确加载 Skill，但执行时只处理了预览数据。",
+    "task": "汇总 100 行订单并生成 Markdown 报告。",
+    "expected": "processed_rows 必须等于 total_rows。",
+    "actual": "只处理了预览的 20 行。"
+  },
+  "skill": {
+    "id": "spreadsheet-summary",
+    "version": "1.2.0",
+    "retrievalScore": 0.92,
+    "loaded": true,
+    "before": [
+      "读取输入文件。",
+      "预览数据并识别列类型。",
+      "计算统计值并输出报告。"
+    ]
+  },
+  "observations": {
+    "routing": {
+      "applicableSkillId": "spreadsheet-summary",
+      "candidateSkillIds": ["spreadsheet-summary"],
+      "selectedSkillId": "spreadsheet-summary"
+    },
+    "loading": {
+      "loadedSkillIds": ["spreadsheet-summary"],
+      "missingResources": []
+    },
+    "execution": {
+      "toolSchemaChecks": [{"id": "summarize", "passed": true}],
+      "instructionChecks": [{"id": "follow-procedure", "passed": true}],
+      "requirementChecks": [{"id": "full-input", "passed": false}]
+    },
+    "externalErrors": []
+  },
+  "fault": {
+    "itemId": "item_2",
+    "title": "只处理了预览数据",
+    "detail": "命令输出 processed_rows=20、total_rows=100，但仍继续生成报告。",
+    "evidence": "codex:item.completed:item_2 + verifier:row-count"
+  },
+  "model": "codex"
+}

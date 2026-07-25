@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "1.0",
+  "cases": [
+    {
+      "id": "reg-non-skill",
+      "signals": { "externalFailure": "service" },
+      "expected": {
+        "taxonomy": "Non-Skill Cause",
+        "ruleId": "ATTR-001",
+        "repairKind": "routing_action",
+        "decision": "ROUTE"
+      }
+    },
+    {
+      "id": "reg-recall",
+      "signals": { "correctSkillInCandidates": false },
+      "expected": {
+        "taxonomy": "Skill Recall Failure",
+        "ruleId": "ATTR-010",
+        "repairKind": "routing_action",
+        "decision": "ROUTE"
+      }
+    },
+    {
+      "id": "reg-selection",
+      "signals": { "correctSkillSelected": false },
+      "expected": {
+        "taxonomy": "Selection Error",
+        "ruleId": "ATTR-020",
+        "repairKind": "routing_action",
+        "decision": "ROUTE"
+      }
+    },
+    {
+      "id": "reg-loading",
+      "signals": { "skillLoaded": false },
+      "expected": {
+        "taxonomy": "Loading Miss",
+        "ruleId": "ATTR-030",
+        "repairKind": "routing_action",
+        "decision": "ROUTE"
+      }
+    },
+    {
+      "id": "reg-tool",
+      "signals": { "toolSchemaValid": false },
+      "expected": {
+        "taxonomy": "Tool Misuse",
+        "ruleId": "ATTR-040",
+        "repairKind": "review_action",
+        "decision": "NEEDS_REVIEW"
+      }
+    },
+    {
+      "id": "reg-instruction",
+      "signals": { "instructionFollowed": false },
+      "expected": {
+        "taxonomy": "Instruction Violation",
+        "ruleId": "ATTR-050",
+        "repairKind": "review_action",
+        "decision": "NEEDS_REVIEW"
+      }
+    },
+    {
+      "id": "reg-content",
+      "signals": { "skillCoversRequirement": false },
+      "expected": {
+        "taxonomy": "Content Gap",
+        "ruleId": "ATTR-060",
+        "repairKind": "skill_patch",
+        "decision": "ADOPT"
+      }
+    }
+  ]
+}

@@ -10,10 +10,17 @@
     "build": "vinext build",
     "start": "vinext start",
     "test": "npm run build && node --experimental-strip-types --test tests/*.test.mjs",
+    "analyze": "node --experimental-strip-types scripts/analyze-trace.mjs",
+    "bench:fetch": "node scripts/fetch-swe-skills-bench.mjs",
+    "bench:paired": "node --experimental-strip-types scripts/run-paired-codex-benchmark.mjs",
+    "bench:skills": "node --experimental-strip-types scripts/run-codex-skill-smoke.mjs",
+    "codex:import": "node --experimental-strip-types scripts/import-codex-jsonl.mjs",
+    "record:example": "node --experimental-strip-types examples/instrumented-agent.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@openai/codex-sdk": "^0.145.0",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",

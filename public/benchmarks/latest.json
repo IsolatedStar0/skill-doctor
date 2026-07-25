@@ -1,0 +1,460 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "paired-2026-07-25T11-25-54-878Z-69f6a827",
+  "generatedAt": "2026-07-25T11:41:21.244Z",
+  "executor": "codex-sdk",
+  "taskKind": "knowledge-probe",
+  "isModelResult": true,
+  "dataset": {
+    "name": "GeniusHTX/SWE-Skills-Bench",
+    "sha256": "616373200363f5faf1cda6699f8952ee47f6b3a506bfdd8026f3655bf5dc6fe6",
+    "selectedSkills": [
+      "tdd-workflow",
+      "python-observability",
+      "distributed-tracing"
+    ]
+  },
+  "summary": {
+    "pairs": 3,
+    "completedPairs": 3,
+    "improved": 2,
+    "tied": 1,
+    "regressed": 0,
+    "averagePassRateDelta": 0.3166666666666667,
+    "averageTokenOverheadRate": 1.208455925068624,
+    "averageDurationDeltaMs": 12231.333333333334,
+    "regressionRate": 0
+  },
+  "pairs": [
+    {
+      "skillId": "tdd-workflow",
+      "name": "TDD Workflow",
+      "dimension": "development-process",
+      "control": {
+        "id": "paired-2026-07-25T11-25-54-878Z-69f6a827:tdd-workflow:without_skill",
+        "condition": "without_skill",
+        "status": "completed",
+        "executor": "codex-sdk",
+        "taskKind": "knowledge-probe",
+        "startedAt": "2026-07-25T11:25:55.449Z",
+        "durationMs": 129838,
+        "usage": {
+          "inputTokens": 17039,
+          "outputTokens": 663,
+          "cachedInputTokens": 0,
+          "reasoningTokens": 388,
+          "totalTokens": 17702
+        },
+        "verifier": {
+          "framework": "pytest",
+          "passed": 1,
+          "failed": 3,
+          "total": 4,
+          "passRate": 0.25,
+          "assertions": [
+            {
+              "id": "tdd-tests-first",
+              "label": "先编写失败测试再实现",
+              "source": "skill",
+              "passed": false,
+              "matched": null
+            },
+            {
+              "id": "tdd-coverage",
+              "label": "覆盖率目标至少 80%",
+              "source": "skill",
+              "passed": false,
+              "matched": null
+            },
+            {
+              "id": "tdd-boundaries",
+              "label": "验证边界与错误场景",
+              "source": "skill",
+              "passed": false,
+              "matched": null
+            },
+            {
+              "id": "tdd-calculator-path",
+              "label": "修改 src/calculator.py",
+              "source": "task",
+              "passed": true,
+              "matched": "src/calculator.py"
+            }
+          ]
+        },
+        "artifacts": {
+          "evidenceSnapshot": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/without_skill/evidence-snapshot.json",
+          "codexJsonl": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/without_skill/codex.jsonl",
+          "pytestOutput": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/without_skill/pytest.txt",
+          "gitDiff": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/without_skill/git.diff"
+        },
+        "error": null
+      },
+      "treatment": {
+        "id": "paired-2026-07-25T11-25-54-878Z-69f6a827:tdd-workflow:with_skill",
+        "condition": "with_skill",
+        "status": "completed",
+        "executor": "codex-sdk",
+        "taskKind": "knowledge-probe",
+        "startedAt": "2026-07-25T11:28:07.351Z",
+        "durationMs": 132433,
+        "usage": {
+          "inputTokens": 39378,
+          "outputTokens": 667,
+          "cachedInputTokens": 16128,
+          "reasoningTokens": 220,
+          "totalTokens": 40045
+        },
+        "verifier": {
+          "framework": "pytest",
+          "passed": 4,
+          "failed": 0,
+          "total": 4,
+          "passRate": 1,
+          "assertions": [
+            {
+              "id": "tdd-tests-first",
+              "label": "先编写失败测试再实现",
+              "source": "skill",
+              "passed": true,
+              "matched": "before implementation"
+            },
+            {
+              "id": "tdd-coverage",
+              "label": "覆盖率目标至少 80%",
+              "source": "skill",
+              "passed": true,
+              "matched": "80%"
+            },
+            {
+              "id": "tdd-boundaries",
+              "label": "验证边界与错误场景",
+              "source": "skill",
+              "passed": true,
+              "matched": "boundary"
+            },
+            {
+              "id": "tdd-calculator-path",
+              "label": "修改 src/calculator.py",
+              "source": "task",
+              "passed": true,
+              "matched": "src/calculator.py"
+            }
+          ]
+        },
+        "artifacts": {
+          "evidenceSnapshot": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/with_skill/evidence-snapshot.json",
+          "codexJsonl": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/with_skill/codex.jsonl",
+          "pytestOutput": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/with_skill/pytest.txt",
+          "gitDiff": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/tdd-workflow/with_skill/git.diff"
+        },
+        "error": null
+      },
+      "comparison": {
+        "outcome": "improved",
+        "passRateDelta": 0.75,
+        "tokenDelta": 22343,
+        "tokenOverheadRate": 1.2621737656761949,
+        "durationDeltaMs": 2595,
+        "regressionRate": 0,
+        "regressedAssertionIds": []
+      }
+    },
+    {
+      "skillId": "python-observability",
+      "name": "Python Observability Patterns",
+      "dimension": "application-observability",
+      "control": {
+        "id": "paired-2026-07-25T11-25-54-878Z-69f6a827:python-observability:without_skill",
+        "condition": "without_skill",
+        "status": "completed",
+        "executor": "codex-sdk",
+        "taskKind": "knowledge-probe",
+        "startedAt": "2026-07-25T11:32:17.094Z",
+        "durationMs": 125671,
+        "usage": {
+          "inputTokens": 16990,
+          "outputTokens": 377,
+          "cachedInputTokens": 0,
+          "reasoningTokens": 83,
+          "totalTokens": 17367
+        },
+        "verifier": {
+          "framework": "pytest",
+          "passed": 3,
+          "failed": 2,
+          "total": 5,
+          "passRate": 0.6,
+          "assertions": [
+            {
+              "id": "otel-traces",
+              "label": "配置 tracing 与 span",
+              "source": "task",
+              "passed": true,
+              "matched": "tracerprovider, span"
+            },
+            {
+              "id": "otel-context",
+              "label": "传播 trace context",
+              "source": "task",
+              "passed": false,
+              "matched": null
+            },
+            {
+              "id": "otel-metrics",
+              "label": "采集 metrics",
+              "source": "task",
+              "passed": false,
+              "matched": null
+            },
+            {
+              "id": "otel-exceptions",
+              "label": "记录异常和 span status",
+              "source": "skill",
+              "passed": true,
+              "matched": "record exception"
+            },
+            {
+              "id": "otel-structured-logs",
+              "label": "使用结构化日志关联 trace",
+              "source": "skill",
+              "passed": true,
+              "matched": "trace_id"
+            }
+          ]
+        },
+        "artifacts": {
+          "evidenceSnapshot": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/without_skill/evidence-snapshot.json",
+          "codexJsonl": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/without_skill/codex.jsonl",
+          "pytestOutput": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/without_skill/pytest.txt",
+          "gitDiff": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/without_skill/git.diff"
+        },
+        "error": null
+      },
+      "treatment": {
+        "id": "paired-2026-07-25T11-25-54-878Z-69f6a827:python-observability:with_skill",
+        "condition": "with_skill",
+        "status": "completed",
+        "executor": "codex-sdk",
+        "taskKind": "knowledge-probe",
+        "startedAt": "2026-07-25T11:34:24.785Z",
+        "durationMs": 136554,
+        "usage": {
+          "inputTokens": 36892,
+          "outputTokens": 1085,
+          "cachedInputTokens": 29184,
+          "reasoningTokens": 387,
+          "totalTokens": 37977
+        },
+        "verifier": {
+          "framework": "pytest",
+          "passed": 4,
+          "failed": 1,
+          "total": 5,
+          "passRate": 0.8,
+          "assertions": [
+            {
+              "id": "otel-traces",
+              "label": "配置 tracing 与 span",
+              "source": "task",
+              "passed": true,
+              "matched": "tracerprovider, span, tracing"
+            },
+            {
+              "id": "otel-context",
+              "label": "传播 trace context",
+              "source": "task",
+              "passed": false,
+              "matched": null
+            },
+            {
+              "id": "otel-metrics",
+              "label": "采集 metrics",
+              "source": "task",
+              "passed": true,
+              "matched": "metric"
+            },
+            {
+              "id": "otel-exceptions",
+              "label": "记录异常和 span status",
+              "source": "skill",
+              "passed": true,
+              "matched": "record_exception"
+            },
+            {
+              "id": "otel-structured-logs",
+              "label": "使用结构化日志关联 trace",
+              "source": "skill",
+              "passed": true,
+              "matched": "trace_id, trace id"
+            }
+          ]
+        },
+        "artifacts": {
+          "evidenceSnapshot": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/with_skill/evidence-snapshot.json",
+          "codexJsonl": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/with_skill/codex.jsonl",
+          "pytestOutput": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/with_skill/pytest.txt",
+          "gitDiff": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/python-observability/with_skill/git.diff"
+        },
+        "error": null
+      },
+      "comparison": {
+        "outcome": "improved",
+        "passRateDelta": 0.20000000000000007,
+        "tokenDelta": 20610,
+        "tokenOverheadRate": 1.1867334600103645,
+        "durationDeltaMs": 10883,
+        "regressionRate": 0,
+        "regressedAssertionIds": []
+      }
+    },
+    {
+      "skillId": "distributed-tracing",
+      "name": "Distributed Tracing & Observability",
+      "dimension": "distributed-observability",
+      "control": {
+        "id": "paired-2026-07-25T11-25-54-878Z-69f6a827:distributed-tracing:without_skill",
+        "condition": "without_skill",
+        "status": "completed",
+        "executor": "codex-sdk",
+        "taskKind": "knowledge-probe",
+        "startedAt": "2026-07-25T11:36:43.276Z",
+        "durationMs": 125541,
+        "usage": {
+          "inputTokens": 17034,
+          "outputTokens": 545,
+          "cachedInputTokens": 16128,
+          "reasoningTokens": 147,
+          "totalTokens": 17579
+        },
+        "verifier": {
+          "framework": "pytest",
+          "passed": 5,
+          "failed": 0,
+          "total": 5,
+          "passRate": 1,
+          "assertions": [
+            {
+              "id": "collector-pipeline",
+              "label": "覆盖 receiver、processor、exporter",
+              "source": "task",
+              "passed": true,
+              "matched": "receiver, processor, exporter"
+            },
+            {
+              "id": "collector-otlp",
+              "label": "配置 OTLP gRPC/HTTP",
+              "source": "task",
+              "passed": true,
+              "matched": "otlp, grpc, http"
+            },
+            {
+              "id": "collector-batch",
+              "label": "使用 batch processor",
+              "source": "skill",
+              "passed": true,
+              "matched": "batch"
+            },
+            {
+              "id": "collector-memory",
+              "label": "使用 memory limiter",
+              "source": "skill",
+              "passed": true,
+              "matched": "memory_limiter"
+            },
+            {
+              "id": "collector-validation",
+              "label": "验证配置和可观测输出",
+              "source": "skill",
+              "passed": true,
+              "matched": "validate"
+            }
+          ]
+        },
+        "artifacts": {
+          "evidenceSnapshot": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/without_skill/evidence-snapshot.json",
+          "codexJsonl": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/without_skill/codex.jsonl",
+          "pytestOutput": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/without_skill/pytest.txt",
+          "gitDiff": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/without_skill/git.diff"
+        },
+        "error": null
+      },
+      "treatment": {
+        "id": "paired-2026-07-25T11-25-54-878Z-69f6a827:distributed-tracing:with_skill",
+        "condition": "with_skill",
+        "status": "completed",
+        "executor": "codex-sdk",
+        "taskKind": "knowledge-probe",
+        "startedAt": "2026-07-25T11:38:50.907Z",
+        "durationMs": 148757,
+        "usage": {
+          "inputTokens": 37002,
+          "outputTokens": 1258,
+          "cachedInputTokens": 16128,
+          "reasoningTokens": 569,
+          "totalTokens": 38260
+        },
+        "verifier": {
+          "framework": "pytest",
+          "passed": 5,
+          "failed": 0,
+          "total": 5,
+          "passRate": 1,
+          "assertions": [
+            {
+              "id": "collector-pipeline",
+              "label": "覆盖 receiver、processor、exporter",
+              "source": "task",
+              "passed": true,
+              "matched": "receiver, processor, exporter"
+            },
+            {
+              "id": "collector-otlp",
+              "label": "配置 OTLP gRPC/HTTP",
+              "source": "task",
+              "passed": true,
+              "matched": "otlp, grpc, http"
+            },
+            {
+              "id": "collector-batch",
+              "label": "使用 batch processor",
+              "source": "skill",
+              "passed": true,
+              "matched": "batch processor, batch"
+            },
+            {
+              "id": "collector-memory",
+              "label": "使用 memory limiter",
+              "source": "skill",
+              "passed": true,
+              "matched": "memory_limiter"
+            },
+            {
+              "id": "collector-validation",
+              "label": "验证配置和可观测输出",
+              "source": "skill",
+              "passed": true,
+              "matched": "validate"
+            }
+          ]
+        },
+        "artifacts": {
+          "evidenceSnapshot": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/with_skill/evidence-snapshot.json",
+          "codexJsonl": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/with_skill/codex.jsonl",
+          "pytestOutput": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/with_skill/pytest.txt",
+          "gitDiff": "reports/paired/paired-2026-07-25T11-25-54-878Z-69f6a827/distributed-tracing/with_skill/git.diff"
+        },
+        "error": null
+      },
+      "comparison": {
+        "outcome": "tied",
+        "passRateDelta": 0,
+        "tokenDelta": 20681,
+        "tokenOverheadRate": 1.1764605495193128,
+        "durationDeltaMs": 23216,
+        "regressionRate": 0,
+        "regressedAssertionIds": []
+      }
+    }
+  ]
+}

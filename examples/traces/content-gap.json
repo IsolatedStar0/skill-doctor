@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "1.1",
+  "session": {
+    "id": "imported-revenue-001",
+    "name": "导入的内容缺口",
+    "summary": "从外部 JSON Trace 导入的 CSV 汇总失败。",
+    "task": "读取 100 行订单 CSV，汇总总营收并输出 Markdown 报告。",
+    "expected": "¥428,650（基于全部 100 行订单）",
+    "actual": "¥82,410（错误地只统计预览的 20 行）"
+  },
+  "skill": {
+    "id": "spreadsheet-summary",
+    "version": "1.2.0",
+    "retrievalScore": 0.92,
+    "loaded": true,
+    "before": [
+      "确认输入文件存在且可读。",
+      "预览前 20 行，识别列名和数据类型。",
+      "计算关键统计值并生成摘要。",
+      "将结果写入 Markdown 报告。"
+    ]
+  },
+  "observations": {
+    "routing": {
+      "applicableSkillId": "spreadsheet-summary",
+      "candidateSkillIds": ["spreadsheet-summary", "generic-report"],
+      "selectedSkillId": "spreadsheet-summary"
+    },
+    "loading": {
+      "loadedSkillIds": ["spreadsheet-summary"],
+      "missingResources": []
+    },
+    "execution": {
+      "toolSchemaChecks": [
+        { "id": "read_csv#17", "passed": true }
+      ],
+      "instructionChecks": [
+        { "id": "procedure-followed", "passed": true }
+      ],
+      "requirementChecks": [
+        { "id": "all-rows-covered", "passed": false }
+      ]
+    },
+    "externalErrors": []
+  },
+  "events": [
+    {
+      "id": "step-01",
+      "at": "00:00.3",
+      "durationMs": 410,
+      "kind": "skill",
+      "title": "召回并加载 spreadsheet-summary@1.2.0",
+      "detail": "候选排名第 1，Skill 文件和依赖均加载成功。",
+      "status": "ok",
+      "model": "gpt-5-mini",
+      "usage": {
+        "inputTokens": 680,
+        "outputTokens": 42,
+        "cachedInputTokens": 420,
+        "reasoningTokens": 0
+      },
+      "evidence": "skill.loaded:spreadsheet-summary@1.2.0"
+    },
+    {
+      "id": "step-02",
+      "at": "00:01.1",
+      "durationMs": 790,
+      "kind": "tool",
+      "title": "预览订单数据",
+      "detail": "read_csv 返回 20/100 行。",
+      "status": "ok",
+      "model": "gpt-5-mini",
+      "usage": {
+        "inputTokens": 920,
+        "outputTokens": 68,
+        "cachedInputTokens": 510,
+        "reasoningTokens": 18
+      },
+      "evidence": "tool.call:read_csv#17"
+    },
+    {
+      "id": "step-03",
+      "at": "00:02.4",
+      "durationMs": 1180,
+      "kind": "decision",
+      "title": "直接基于预览结果计算总营收",
+      "detail": "Agent 将预览结果误当作完整数据集。",
+      "status": "fault",
+      "model": "gpt-5-mini",
+      "usage": {
+        "inputTokens": 1260,
+        "outputTokens": 214,
+        "cachedInputTokens": 600,
+        "reasoningTokens": 136
+      },
+      "evidence": "decision#23 + skill.procedure:3"
+    },
+    {
+      "id": "step-04",
+      "at": "00:04.2",
+      "durationMs": 430,
+      "kind": "evaluation",
+      "title": "Evaluator 判定失败",
+      "detail": "总营收与全量数据计算结果不一致。",
+      "status": "downstream",
+      "model": "gpt-5-mini",
+      "usage": {
+        "inputTokens": 540,
+        "outputTokens": 92,
+        "cachedInputTokens": 360,
+        "reasoningTokens": 28
+      },
+      "evidence": "evaluator:revenue_total_mismatch"
+    }
+  ]
+}

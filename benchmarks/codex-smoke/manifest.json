@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "name": "Codex + SWE-Skills-Bench smoke suite",
+  "source": {
+    "name": "GeniusHTX/SWE-Skills-Bench",
+    "url": "https://huggingface.co/datasets/GeniusHTX/SWE-Skills-Bench",
+    "license": "MIT",
+    "datasetFile": "swe_skills_bench.jsonl",
+    "observedSha256": "616373200363f5faf1cda6699f8952ee47f6b3a506bfdd8026f3655bf5dc6fe6"
+  },
+  "skills": [
+    {
+      "id": "tdd-workflow",
+      "dimension": "development-process",
+      "why": "验证 Codex 是否会读取并遵循测试先行、覆盖率和边界用例约束。"
+    },
+    {
+      "id": "python-observability",
+      "dimension": "application-observability",
+      "why": "验证 tracing、context propagation、metrics 等可观测性知识是否被正确召回。"
+    },
+    {
+      "id": "distributed-tracing",
+      "dimension": "distributed-observability",
+      "why": "验证 Collector receiver/processor/exporter pipeline 的系统级配置知识。"
+    }
+  ],
+  "staticGates": {
+    "minimumSkillDocumentCharacters": 400,
+    "minimumTaskPromptCharacters": 500,
+    "requireFrontmatter": true,
+    "requirePythonVerifierAssertions": true,
+    "requireRepositoryUrl": true
+  }
+}
