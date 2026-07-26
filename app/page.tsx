@@ -1,5 +1,10 @@
 import DemoApp from "./DemoApp";
+import { RunStoreProvider } from "./RunStore";
 
 export default function Home() {
-  return <DemoApp />;
+  return (
+    <RunStoreProvider>
+      <DemoApp />
+    </RunStoreProvider>
+  );
 }

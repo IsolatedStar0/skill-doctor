@@ -5,6 +5,7 @@ import {
   streamLangGraphRun,
   type LangGraphState,
 } from "../lib/langgraph-stream";
+import { useRunStore } from "./RunStore";
 
 type RunMode = "fixture" | "replay" | "codex";
 type UiStatus = "idle" | "running" | "passed" | "failed" | "error";
@@ -50,7 +51,7 @@ function tokens(state: LangGraphState | null) {
 export default function LangGraphDashboard() {
   const [mode, setMode] = useState<RunMode>("fixture");
   const [uiStatus, setUiStatus] = useState<UiStatus>("idle");
-  const [snapshot, setSnapshot] = useState<LangGraphState | null>(null);
+  const { snapshot, setSnapshot } = useRunStore();
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const apiUrl =
@@ -63,6 +64,10 @@ export default function LangGraphDashboard() {
     },
     [],
   );
+  useEffect(() => {
+    if (snapshot?.status === "passed") setUiStatus("passed");
+    if (snapshot?.status === "failed") setUiStatus("failed");
+  }, [snapshot?.status]);
 
   const totalTokens = useMemo(() => tokens(snapshot), [snapshot]);
   const graphEventCount =

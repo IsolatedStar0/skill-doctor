@@ -24,13 +24,24 @@ export type LangGraphExecution = {
   usage: LangGraphTokenUsage;
   regression_rate: number;
   summary: string;
+  assertions: {
+    id: string;
+    source: "task" | "skill" | "system";
+    passed: boolean;
+    detail?: string | null;
+  }[];
+  artifacts: Record<string, string>;
+  error?: string | null;
 };
 
 export type LangGraphState = {
   run_id: string;
+  task: string;
   skill_id: string;
   skill_version: string;
+  skill_content: string;
   executor: string;
+  scenario: string;
   attempt: number;
   max_attempts: number;
   status: string;
@@ -47,10 +58,27 @@ export type LangGraphState = {
   events: LangGraphEvent[];
   execution?: LangGraphExecution;
   baseline_execution?: LangGraphExecution;
+  evidence_snapshot?: {
+    schema_version: "1.0";
+    run_id: string;
+    attempt: number;
+    skill_id: string;
+    condition: string;
+    execution_sha256: string;
+    assertion_sha256: string;
+    artifact_refs: string[];
+  };
   attribution?: {
     taxonomy: string;
-    cause: string;
+    cause: "skill" | "routing" | "loader" | "tool" | "platform";
     confidence: number;
+    responsibility: number;
+    action:
+      | "patch_skill"
+      | "patch_routing"
+      | "patch_loader"
+      | "split_non_skill";
+    evidence_refs: string[];
     explanation: string;
   };
   repair_patch?: {
@@ -60,6 +88,7 @@ export type LangGraphState = {
     next_version: string;
     before: string;
     after: string;
+    evidence_refs: string[];
     rollback_ref: string;
   };
   verification?: {

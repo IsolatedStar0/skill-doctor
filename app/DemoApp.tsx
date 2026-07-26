@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   analyzeCase,
   demoCases,
@@ -15,8 +15,14 @@ import {
   TraceValidationError,
 } from "../lib/trace-adapter";
 import type { PairedBenchmarkReport } from "../lib/benchmark-engine";
+import type { LangGraphState } from "../lib/langgraph-stream";
+import {
+  adaptLangGraphState,
+  runEvidenceId,
+} from "../lib/run-view-adapter";
 import benchmarkReportJson from "../public/benchmarks/latest.json";
 import LangGraphDashboard from "./LangGraphDashboard";
+import { useRunStore } from "./RunStore";
 
 type View =
   | "overview"
@@ -344,9 +350,15 @@ function signedDuration(value: number | null) {
 
 function BenchmarkDashboard({
   report,
+  activeRun,
 }: {
   report: PairedBenchmarkReport;
+  activeRun: LangGraphState | null;
 }) {
+  const linkedPair = activeRun
+    ? report.pairs.find((pair) => pair.skillId === activeRun.skill_id)
+    : undefined;
+
   return (
     <section className="benchmark-view">
       <div className="section-intro benchmark-intro">
@@ -363,6 +375,59 @@ function BenchmarkDashboard({
           <small>{new Date(report.generatedAt).toLocaleString("zh-CN")}</small>
         </div>
       </div>
+
+      {activeRun && (
+        <div className="benchmark-run-link panel">
+          <div>
+            <span>CURRENT AGENT RUN</span>
+            <strong>{activeRun.run_id}</strong>
+            <small>
+              {activeRun.skill_id} · {activeRun.executor} ·{" "}
+              {linkedPair ? "paired benchmark matched" : "no historical pair"}
+            </small>
+          </div>
+          <div>
+            <span>EVIDENCE SNAPSHOT</span>
+            <code>
+              {runEvidenceId(activeRun)?.slice(0, 16) ?? "pending"}
+            </code>
+            {activeRun.observability?.trace_url && (
+              <a
+                href={activeRun.observability.trace_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                OPEN IN LANGSMITH →
+              </a>
+            )}
+          </div>
+          <div>
+            <span>CURRENT RUN EVALUATION</span>
+            <strong>
+              {plainPercent(
+                activeRun.verification?.baseline_pass_rate ??
+                  activeRun.baseline_execution?.pass_rate ??
+                  0,
+              )}{" "}
+              →{" "}
+              {plainPercent(
+                activeRun.verification?.candidate_pass_rate ??
+                  activeRun.execution?.pass_rate ??
+                  0,
+              )}
+            </strong>
+            <small>
+              {activeRun.verification?.decision ?? activeRun.status} ·
+              regression{" "}
+              {plainPercent(
+                activeRun.verification?.regression_rate ??
+                  activeRun.execution?.regression_rate ??
+                  0,
+              )}
+            </small>
+          </div>
+        </div>
+      )}
 
       <div className="benchmark-notice">
         <strong>范围说明</strong>
@@ -421,7 +486,14 @@ function BenchmarkDashboard({
             </thead>
             <tbody>
               {report.pairs.map((pair) => (
-                <tr key={pair.skillId}>
+                <tr
+                  key={pair.skillId}
+                  className={
+                    activeRun?.skill_id === pair.skillId
+                      ? "current-run-pair"
+                      : undefined
+                  }
+                >
                   <td>
                     <strong>{pair.name}</strong>
                     <code>{pair.skillId}</code>
@@ -538,6 +610,7 @@ function BenchmarkDashboard({
 }
 
 export default function DemoApp() {
+  const { snapshot, clearRun } = useRunStore();
   const [view, setView] = useState<View>("overview");
   const [selectedCaseId, setSelectedCaseId] = useState(demoCases[0].id);
   const [importedCases, setImportedCases] = useState<DemoCase[]>([]);
@@ -545,47 +618,69 @@ export default function DemoApp() {
     kind: "success" | "error";
     message: string;
   } | null>(null);
-  const [runKey, setRunKey] = useState(0);
-  const [stage, setStage] = useState(4);
 
   const availableCases = useMemo(
     () => [...demoCases, ...importedCases],
     [importedCases],
   );
-  const activeCase =
+  const selectedCase =
     availableCases.find((item) => item.id === selectedCaseId) ?? demoCases[0];
-  const result = useMemo(() => analyzeCase(activeCase), [activeCase]);
+  const sampleResult = useMemo(
+    () => analyzeCase(selectedCase),
+    [selectedCase],
+  );
+  const result = useMemo(
+    () => (snapshot ? adaptLangGraphState(snapshot) : sampleResult),
+    [snapshot, sampleResult],
+  );
+  const activeCase = result.input;
+  const completedStages = snapshot
+    ? new Set(snapshot.events.map((event) => event.stage))
+    : null;
+  const stage = !completedStages
+    ? 4
+    : completedStages.has("verify") ||
+        completedStages.has("promote") ||
+        completedStages.has("finalize")
+      ? 4
+      : completedStages.has("repair")
+        ? 3
+        : completedStages.has("attribute")
+          ? 2
+          : completedStages.has("collect_evidence")
+            ? 1
+            : 0;
   const isSkillPatch = result.repair.kind === "skill_patch";
+  const changedLineCount =
+    result.repair.kind === "skill_patch"
+      ? Array.from({
+          length: Math.max(
+            result.repair.before.length,
+            result.repair.after.length,
+          ),
+        }).filter(
+          (_, index) =>
+            result.repair.kind === "skill_patch" &&
+            result.repair.before[index] !== result.repair.after[index],
+        ).length
+      : 0;
+  const repairLineCount =
+    result.repair.kind === "skill_patch"
+      ? Math.max(result.repair.before.length, result.repair.after.length)
+      : 0;
   const maxStepTokens = Math.max(
     ...activeCase.trace.map(stepTokenTotal),
     1,
   );
 
-  useEffect(() => {
-    if (runKey === 0) return;
-    const timer = window.setInterval(() => {
-      setStage((current) => {
-        if (current >= 4) {
-          window.clearInterval(timer);
-          return 4;
-        }
-        return current + 1;
-      });
-    }, 620);
-    return () => window.clearInterval(timer);
-  }, [runKey]);
-
   const rerun = () => {
-    setView("overview");
-    setStage(0);
-    setRunKey((value) => value + 1);
+    setView("orchestrator");
   };
 
   const selectCase = (caseId: string) => {
+    clearRun();
     setSelectedCaseId(caseId);
     setView("overview");
-    setStage(0);
-    setRunKey((value) => value + 1);
   };
 
   const importTrace = async (
@@ -605,10 +700,9 @@ export default function DemoApp() {
         ...current.filter((item) => item.id !== imported.id),
         imported,
       ]);
+      clearRun();
       setSelectedCaseId(imported.id);
       setView("trace");
-      setStage(0);
-      setRunKey((value) => value + 1);
       setImportState({
         kind: "success",
         message: `已导入 ${file.name}：${imported.trace.length} steps，${formatTokens(
@@ -655,7 +749,7 @@ export default function DemoApp() {
 
         <div className="sidebar-foot">
           <span className="live-dot" />
-          <span>DETERMINISTIC DEMO</span>
+          <span>{snapshot ? "LIVE AGENT RUN" : "SAMPLE DATA"}</span>
           <small>{activeCase.id}</small>
         </div>
       </aside>
@@ -681,7 +775,7 @@ export default function DemoApp() {
               />
             </label>
             <button className="run-button" type="button" onClick={rerun}>
-              <span>重新运行闭环</span>
+              <span>启动统一 Run</span>
               <b>↗</b>
             </button>
           </div>
@@ -694,6 +788,39 @@ export default function DemoApp() {
           >
             <span>{importState.kind === "success" ? "✓" : "!"}</span>
             {importState.message}
+          </div>
+        )}
+
+        {view !== "orchestrator" && (
+          <div className={`run-provenance ${snapshot ? "live" : "sample"}`}>
+            <div>
+              <span>{snapshot ? "LIVE RUN SOURCE" : "PRE-RUN SAMPLE"}</span>
+              <strong>{activeCase.id}</strong>
+            </div>
+            <div>
+              <span>EXECUTOR</span>
+              <code>{snapshot?.executor ?? "deterministic-demo-engine"}</code>
+            </div>
+            <div>
+              <span>EVIDENCE</span>
+              <code>
+                {runEvidenceId(snapshot)?.slice(0, 16) ??
+                  (snapshot ? "pending" : "sample-fixture")}
+              </code>
+            </div>
+            {snapshot?.observability?.trace_url ? (
+              <a
+                href={snapshot.observability.trace_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                OPEN IN LANGSMITH →
+              </a>
+            ) : (
+              <button type="button" onClick={() => setView("orchestrator")}>
+                {snapshot ? "VIEW LIVE LOOP →" : "START AGENT RUN →"}
+              </button>
+            )}
           </div>
         )}
 
@@ -773,7 +900,11 @@ export default function DemoApp() {
                 </div>
                 <div>
                   <dt>Runtime</dt>
-                  <dd>local deterministic harness</dd>
+                  <dd>
+                    {snapshot
+                      ? `${snapshot.executor} / LangGraph`
+                      : "local deterministic harness"}
+                  </dd>
                 </div>
               </dl>
             </article>
@@ -866,7 +997,13 @@ export default function DemoApp() {
               <dl>
                 <div>
                   <dt>Snapshot</dt>
-                  <dd>sha256:8a7f…42c1</dd>
+                  <dd>
+                    {runEvidenceId(snapshot)
+                      ? `sha256:${runEvidenceId(snapshot)?.slice(0, 12)}…`
+                      : snapshot
+                        ? "pending"
+                        : "sample-fixture"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Load state</dt>
@@ -899,7 +1036,10 @@ export default function DemoApp() {
         {view === "usage" && <TokenDashboard trace={activeCase.trace} />}
 
         {view === "benchmark" && (
-          <BenchmarkDashboard report={benchmarkReport} />
+          <BenchmarkDashboard
+            report={benchmarkReport}
+            activeRun={snapshot}
+          />
         )}
 
         {view === "orchestrator" && <LangGraphDashboard />}
@@ -1020,30 +1160,40 @@ export default function DemoApp() {
                   <article className="diff-panel panel">
                     <div className="panel-heading">
                       <span>SKILL.MD / PROCEDURE</span>
-                      <strong>1 LINE CHANGED</strong>
+                      <strong>{changedLineCount} LINES CHANGED</strong>
                     </div>
                     <div className="diff-lines">
-                      {result.repair.before.map((line, index) => {
-                        const changed =
-                          index + 1 === result.repair.changedLine;
-                        return changed ? (
-                          <div className="diff-change" key={line}>
-                            <p className="removed">
-                              <span>-</span>
-                              {line}
+                      {Array.from({ length: repairLineCount }).map(
+                        (_, index) => {
+                          const beforeLine = result.repair.before[index];
+                          const afterLine = result.repair.after[index];
+                          const changed = beforeLine !== afterLine;
+                          return changed ? (
+                            <div
+                              className="diff-change"
+                              key={`diff-${index}`}
+                            >
+                              {beforeLine !== undefined && (
+                                <p className="removed">
+                                  <span>-</span>
+                                  {beforeLine}
+                                </p>
+                              )}
+                              {afterLine !== undefined && (
+                                <p className="added">
+                                  <span>+</span>
+                                  {afterLine}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p key={`line-${index}`}>
+                              <span>{index + 1}</span>
+                              {beforeLine}
                             </p>
-                            <p className="added">
-                              <span>+</span>
-                              {result.repair.after[index]}
-                            </p>
-                          </div>
-                        ) : (
-                          <p key={line}>
-                            <span>{index + 1}</span>
-                            {line}
-                          </p>
-                        );
-                      })}
+                          );
+                        },
+                      )}
                     </div>
                     <footer>
                       <span>scope: {result.repair.scope}</span>
@@ -1060,7 +1210,7 @@ export default function DemoApp() {
                     </div>
                     <div className="validation-bars">
                       <div>
-                        <span>Original replay</span>
+                        <span>Current Run pass rate</span>
                         <p>
                           <i
                             style={{
@@ -1068,10 +1218,18 @@ export default function DemoApp() {
                             }}
                           />
                         </p>
-                        <strong>0 → 1</strong>
+                        <strong>
+                          {plainPercent(
+                            result.validation.originalReplay.before,
+                          )}{" "}
+                          →{" "}
+                          {plainPercent(
+                            result.validation.originalReplay.after,
+                          )}
+                        </strong>
                       </div>
                       <div>
-                        <span>Similar cases</span>
+                        <span>Verification sample</span>
                         <p>
                           <i
                             style={{
@@ -1079,10 +1237,18 @@ export default function DemoApp() {
                             }}
                           />
                         </p>
-                        <strong>50 → 100%</strong>
+                        <strong>
+                          {plainPercent(
+                            result.validation.similarCases.before,
+                          )}{" "}
+                          →{" "}
+                          {plainPercent(
+                            result.validation.similarCases.after,
+                          )}
+                        </strong>
                       </div>
                       <div>
-                        <span>Regression</span>
+                        <span>Regression retention</span>
                         <p>
                           <i
                             style={{
@@ -1090,14 +1256,21 @@ export default function DemoApp() {
                             }}
                           />
                         </p>
-                        <strong>100 → 100%</strong>
+                        <strong>
+                          {plainPercent(result.validation.regression.before)}{" "}
+                          →{" "}
+                          {plainPercent(result.validation.regression.after)}
+                        </strong>
                       </div>
                       <div>
                         <span>Tool errors</span>
                         <p>
                           <i style={{ width: "0%" }} />
                         </p>
-                        <strong>1 → 0</strong>
+                        <strong>
+                          {result.validation.toolErrors.before} →{" "}
+                          {result.validation.toolErrors.after}
+                        </strong>
                       </div>
                     </div>
                     <div className="gate-rule">

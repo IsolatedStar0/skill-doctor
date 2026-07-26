@@ -150,9 +150,23 @@ API 提供 `POST /runs`、`POST /runs/stream` 和 `GET /runs/{run_id}`。
 运行保存在 `reports/langgraph/`。平台异常会直接结束并保持
 `NO_SKILL_MUTATION`，只有高置信度的 Skill/loader 归因才能进入修复循环。
 
-页面中的 `LangGraph Loop` 会消费 `/runs/stream` 的 NDJSON 增量响应，
-逐节点更新时间线、Token、归因、Skill diff 和验证门禁。本地默认连接
-`http://localhost:8010`；需要覆盖时设置
+页面中的 `LangGraph Loop` 会消费 `/runs/stream` 的 NDJSON 增量响应，并将
+每个完整 `AgentState` 写入前端唯一的 `RunStore`。运行概览、Trace、Token、
+归因、Skill diff、验证门禁以及 Benchmark 的当前运行关联都由该状态适配生成，
+不再各自读取独立 mock。尚未启动 Agent 时，内置 case 只作为输入样例；一旦
+Run 开始，所有页面立即切换到同一个 `run_id`、Evidence Snapshot 和 LangSmith
+Trace。数据链路如下：
+
+```text
+Codex SDK / Fixture Worker
+→ LangGraph AgentState
+→ /runs/stream NDJSON
+→ frontend RunStore
+→ Overview / Trace / Token / Attribution / Repair / Benchmark
+                         ↘ Evidence Snapshot / LangSmith trace_url
+```
+
+本地默认连接 `http://localhost:8010`；需要覆盖时设置
 `NEXT_PUBLIC_SKILL_DOCTOR_API_URL`。安装 `backend[api]` 后也可以运行
 `npm run agent:api:fastapi` 使用 FastAPI 入口。
 
