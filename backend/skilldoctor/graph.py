@@ -29,9 +29,10 @@ def _event(
     status: Literal["started", "completed", "failed", "skipped"] = "completed",
     usage: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
+    sequence_offset: int = 0,
 ) -> dict[str, Any]:
     return RunEvent(
-        sequence=len(state.get("events", [])) + 1,
+        sequence=len(state.get("events", [])) + sequence_offset + 1,
         stage=stage,
         status=status,
         attempt=state["attempt"],
@@ -74,20 +75,34 @@ def build_agent_graph(worker: ExecutionWorker):
             skill_content=state["skill_content"],
         )
         payload = result.model_dump(mode="json")
+        runtime_events = [
+            RunEvent(
+                sequence=len(state.get("events", [])) + index,
+                attempt=state["attempt"],
+                **event,
+            ).model_dump(mode="json")
+            for index, event in enumerate(result.runtime_events, start=1)
+        ]
         update: dict[str, Any] = {
             "execution": payload,
             "events": [
+                *runtime_events,
                 _event(
                     state,
                     "execute",
                     result.summary,
                     status="completed" if result.error is None else "failed",
-                    usage=result.usage.model_dump(mode="json"),
+                    usage=(
+                        None
+                        if runtime_events
+                        else result.usage.model_dump(mode="json")
+                    ),
                     metadata={
                         "condition": result.condition,
                         "pass_rate": result.pass_rate,
                         "executor": result.executor,
                     },
+                    sequence_offset=len(runtime_events),
                 )
             ],
         }

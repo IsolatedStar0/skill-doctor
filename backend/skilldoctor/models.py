@@ -35,6 +35,7 @@ class ExecutionResult(BaseModel):
     regression_rate: float = Field(default=0, ge=0, le=1)
     summary: str
     artifacts: dict[str, str] = Field(default_factory=dict)
+    runtime_events: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
 
 

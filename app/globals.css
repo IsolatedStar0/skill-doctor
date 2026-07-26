@@ -1362,6 +1362,15 @@ button { font: inherit; }
   background: #528162;
 }
 .graph-event.event-failed > i { background: var(--danger); }
+.graph-event.codex-event {
+  border-color: rgba(82, 129, 98, .38);
+  background:
+    linear-gradient(135deg, rgba(82, 129, 98, .08), transparent 42%),
+    var(--panel);
+}
+.graph-event.codex-event > i {
+  box-shadow: 0 0 0 4px rgba(82, 129, 98, .12);
+}
 .graph-event small {
   display: block;
   margin-bottom: 10px;

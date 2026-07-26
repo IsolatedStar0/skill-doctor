@@ -162,7 +162,22 @@ LangGraph 现在支持 `executor=codex`，不再只能重放历史配对报告�
 编排层会调用 `scripts/codex-execution-worker.mjs`，由已安装的
 `@openai/codex-sdk` 在隔离临时 Git 工作区中安装当前候选 Skill，并使用
 `read-only` sandbox、`approvalPolicy=never` 和禁用任务网络的配置执行真实
-Codex thread。每次 attempt 都会保存：
+Codex thread。Node bridge 会把 `runStreamed()` 的每个内部事件编码为
+NDJSON，Python control plane 在执行尚未结束时就将它们合并进
+`/runs/stream`：
+
+```text
+Codex SDK runStreamed()
+→ Node NDJSON bridge
+→ Python CodexExecutionWorker callback
+→ LangGraph live state
+→ /runs/stream
+→ React timeline
+```
+
+实时事件包括 thread、turn、reasoning、command execution、file change、
+MCP call、web search、agent message、transport error 和最终 token usage。
+每次 attempt 同时保存：
 
 - Codex SDK 原始事件 JSONL 与 thread id
 - 最终回答与 Token usage
@@ -175,9 +190,10 @@ Codex thread。每次 attempt 都会保存：
 npm run agent:codex
 ```
 
-也可以在 `LangGraph Loop` 页面选择 `CODEX SDK LIVE`。真实执行使用本机
-Codex 登录态和服务连接；鉴权、网络或超时失败会归类为 `Non-Skill Cause`，
-不会生成 Skill Patch。
+也可以在 `LangGraph Loop` 页面选择 `CODEX SDK LIVE`。面板会区分
+LangGraph 生命周期节点和 Codex SDK 内部事件，Token 只在
+`turn.completed` 计入一次。真实执行使用本机 Codex 登录态和服务连接；
+鉴权、网络或超时失败会归类为 `Non-Skill Cause`，不会生成 Skill Patch。
 
 ## Codex SDK 配对评测
 

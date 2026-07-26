@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import queue
+import threading
 import time
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
 from .graph import build_agent_graph
-from .models import AgentState, RunRequest
+from .models import AgentState, RunEvent, RunRequest
 from .workers import (
     BenchmarkReplayWorker,
     CodexExecutionWorker,
@@ -93,17 +96,77 @@ class RunService:
 
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:
         run_id = f"lg-{uuid4().hex[:12]}"
-        graph = build_agent_graph(self._worker(request))
+        worker = self._worker(request)
+        graph = build_agent_graph(worker)
+        updates: queue.Queue[tuple[str, Any]] = queue.Queue()
         latest: dict[str, Any] | None = None
-        for update in graph.stream(
-            self._initial_state(request, run_id),
-            config={"configurable": {"thread_id": run_id}},
-            stream_mode="values",
-        ):
-            latest = update
-            yield update
-            if request.stream_delay_ms:
-                time.sleep(request.stream_delay_ms / 1_000)
+        pending_runtime_events: list[dict[str, Any]] = []
+
+        callback_setter = getattr(worker, "set_event_callback", None)
+        if callable(callback_setter):
+            callback_setter(
+                lambda event: updates.put(("runtime_event", event))
+            )
+
+        def produce() -> None:
+            try:
+                for state in graph.stream(
+                    self._initial_state(request, run_id),
+                    config={"configurable": {"thread_id": run_id}},
+                    stream_mode="values",
+                ):
+                    updates.put(("state", state))
+            except BaseException as error:
+                updates.put(("error", error))
+            finally:
+                updates.put(("done", None))
+
+        producer = threading.Thread(
+            target=produce,
+            name=f"skill-doctor-{run_id}",
+            daemon=True,
+        )
+        producer.start()
+        try:
+            while True:
+                kind, payload = updates.get()
+                if kind == "state":
+                    latest = payload
+                    pending_runtime_events = []
+                    yield payload
+                    if request.stream_delay_ms:
+                        time.sleep(request.stream_delay_ms / 1_000)
+                elif kind == "runtime_event":
+                    pending_runtime_events.append(payload)
+                    if latest is None:
+                        continue
+                    snapshot = deepcopy(latest)
+                    base_sequence = len(latest.get("events", []))
+                    live_events = [
+                        RunEvent(
+                            sequence=base_sequence + index,
+                            attempt=latest["attempt"],
+                            **event,
+                        ).model_dump(mode="json")
+                        for index, event in enumerate(
+                            pending_runtime_events,
+                            start=1,
+                        )
+                    ]
+                    snapshot["events"] = [
+                        *latest.get("events", []),
+                        *live_events,
+                    ]
+                    snapshot["status"] = "running"
+                    yield snapshot
+                elif kind == "error":
+                    raise payload
+                elif kind == "done":
+                    break
+        finally:
+            if callable(callback_setter):
+                callback_setter(None)
+            producer.join(timeout=1)
         if latest is not None:
             self._save(latest)
 

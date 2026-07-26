@@ -18,6 +18,17 @@ const stageCopy: Record<string, string> = {
   verify: "回归验证",
   promote: "升级 Skill",
   finalize: "安全结束",
+  "codex.thread": "Codex Thread",
+  "codex.turn": "Codex Turn",
+  "codex.reasoning": "推理过程",
+  "codex.command_execution": "命令执行",
+  "codex.file_change": "文件变更",
+  "codex.mcp_tool_call": "MCP 调用",
+  "codex.web_search": "联网检索",
+  "codex.agent_message": "Agent 输出",
+  "codex.todo_list": "任务列表",
+  "codex.transport": "连接状态",
+  "codex.error": "执行错误",
 };
 
 function percent(value: number | undefined) {
@@ -54,9 +65,17 @@ export default function LangGraphDashboard() {
   );
 
   const totalTokens = useMemo(() => tokens(snapshot), [snapshot]);
-  const progress = snapshot
-    ? Math.min(100, Math.round((snapshot.events.length / 9) * 100))
-    : 0;
+  const graphEventCount =
+    snapshot?.events.filter((event) => !event.stage.startsWith("codex."))
+      .length ?? 0;
+  const codexEventCount =
+    snapshot?.events.filter((event) => event.stage.startsWith("codex."))
+      .length ?? 0;
+  const terminal =
+    snapshot?.status === "passed" || snapshot?.status === "failed";
+  const progress = terminal
+    ? 100
+    : Math.min(96, Math.round((graphEventCount / 9) * 100));
 
   const run = async () => {
     abortRef.current?.abort();
@@ -183,9 +202,9 @@ export default function LangGraphDashboard() {
           <small>最多 {snapshot?.max_attempts ?? 2} 次修复</small>
         </article>
         <article className="panel">
-          <span>OBSERVED NODES</span>
-          <strong>{snapshot?.events.length ?? 0}</strong>
-          <small>状态快照实时增长</small>
+          <span>LIVE EVENTS</span>
+          <strong>{codexEventCount}</strong>
+          <small>{graphEventCount} LangGraph nodes</small>
         </article>
         <article className="panel">
           <span>TOTAL TOKENS</span>
@@ -210,7 +229,9 @@ export default function LangGraphDashboard() {
           <div className="graph-event-list">
             {snapshot.events.map((event) => (
               <div
-                className={`graph-event event-${event.status}`}
+                className={`graph-event event-${event.status}${
+                  event.stage.startsWith("codex.") ? " codex-event" : ""
+                }`}
                 key={`${event.sequence}-${event.stage}`}
               >
                 <span className="event-index">
@@ -228,6 +249,12 @@ export default function LangGraphDashboard() {
                   <div>
                     <dt>stage</dt>
                     <dd>{event.stage}</dd>
+                  </div>
+                  <div>
+                    <dt>source</dt>
+                    <dd>
+                      {event.stage.startsWith("codex.") ? "SDK" : "GRAPH"}
+                    </dd>
                   </div>
                   <div>
                     <dt>tokens</dt>

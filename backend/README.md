@@ -45,6 +45,12 @@ maps the real Codex event stream, token usage, verifier assertions, and
 artifacts back into `ExecutionResult`. The isolated Codex thread is read-only,
 never requests approval, and cannot use task network access.
 
+The bridge protocol is newline-delimited JSON. `event` envelopes are emitted
+immediately for every `runStreamed()` SDK event; one terminal `result` envelope
+contains the normalized `ExecutionResult`. During `RunService.stream()`, a
+background graph producer and event queue merge these SDK events into live
+state snapshots before the `execute` node completes.
+
 Start the dependency-free local API:
 
 ```bash

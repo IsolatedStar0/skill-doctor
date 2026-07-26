@@ -6,6 +6,10 @@ import { join, relative, resolve } from "node:path";
 import process from "node:process";
 import { Codex } from "@openai/codex-sdk";
 
+function emit(kind, payload) {
+  process.stdout.write(`${JSON.stringify({ kind, ...payload })}\n`);
+}
+
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
@@ -191,6 +195,11 @@ async function main() {
     });
     for await (const event of streamed.events) {
       events.push(event);
+      emit("event", {
+        sequence: events.length,
+        occurredAt: new Date().toISOString(),
+        event,
+      });
       if (event.type === "turn.failed") error = event.error.message;
       if (event.type === "error") error = event.message;
     }
@@ -199,6 +208,12 @@ async function main() {
   }
   const durationMs = Math.round(performance.now() - started);
   const response = finalResponse(events);
+  if (
+    response &&
+    events.some((event) => event.type === "turn.completed")
+  ) {
+    error = null;
+  }
   const assertions = evaluateAssertions(response, context.probe?.assertions);
   const passedCount = assertions.filter((item) => item.passed).length;
   const passRate =
@@ -261,12 +276,13 @@ async function main() {
     ),
     error,
   };
-  process.stdout.write(JSON.stringify(result));
+  emit("result", { result });
 }
 
 main().catch((error) => {
-  process.stderr.write(
-    `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`,
-  );
+  const message =
+    error instanceof Error ? error.stack ?? error.message : String(error);
+  emit("bridge_error", { error: message });
+  process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 });

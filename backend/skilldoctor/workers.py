@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import threading
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Callable, Protocol
 
 from .models import AssertionResult, ExecutionResult, RunRequest, TokenUsage
 
@@ -182,6 +183,112 @@ class CodexExecutionWorker:
             bridge_path
             or self.project_root / "scripts" / "codex-execution-worker.mjs"
         ).resolve()
+        self._event_callback: Callable[[dict[str, Any]], None] | None = None
+
+    def set_event_callback(
+        self,
+        callback: Callable[[dict[str, Any]], None] | None,
+    ) -> None:
+        self._event_callback = callback
+
+    @staticmethod
+    def _message(value: Any, limit: int = 360) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return "Codex SDK emitted an event."
+        return text if len(text) <= limit else f"{text[:limit - 1]}…"
+
+    def _runtime_event(self, envelope: dict[str, Any]) -> dict[str, Any]:
+        event = envelope.get("event") or {}
+        event_type = str(event.get("type") or "unknown")
+        item = event.get("item") if isinstance(event.get("item"), dict) else {}
+        item_type = str(item.get("type") or "")
+        metadata: dict[str, Any] = {
+            "event_type": event_type,
+            "sdk_sequence": envelope.get("sequence", 0),
+            "occurred_at": envelope.get("occurredAt", ""),
+        }
+        usage = None
+
+        if event_type == "thread.started":
+            stage = "codex.thread"
+            status = "started"
+            metadata["thread_id"] = event.get("thread_id", "")
+            message = f"Codex thread {event.get('thread_id', 'unknown')} started."
+        elif event_type == "turn.started":
+            stage = "codex.turn"
+            status = "started"
+            message = "Codex turn started."
+        elif event_type == "turn.completed":
+            stage = "codex.turn"
+            status = "completed"
+            raw_usage = event.get("usage") or {}
+            usage = {
+                "input_tokens": raw_usage.get("input_tokens", 0),
+                "output_tokens": raw_usage.get("output_tokens", 0),
+                "cached_input_tokens": raw_usage.get("cached_input_tokens", 0),
+                "reasoning_tokens": raw_usage.get("reasoning_output_tokens", 0),
+            }
+            message = "Codex turn completed with final token usage."
+        elif event_type == "turn.failed":
+            stage = "codex.turn"
+            status = "failed"
+            message = self._message((event.get("error") or {}).get("message"))
+        elif event_type == "error":
+            stage = "codex.transport"
+            status = "failed"
+            message = self._message(event.get("message"))
+        elif event_type.startswith("item."):
+            stage = f"codex.{item_type or 'item'}"
+            raw_status = str(item.get("status") or "")
+            status = (
+                "failed"
+                if raw_status == "failed"
+                else "completed"
+                if event_type == "item.completed" or raw_status == "completed"
+                else "started"
+            )
+            metadata["item_type"] = item_type
+            metadata["item_id"] = item.get("id", "")
+            if item_type == "command_execution":
+                metadata["exit_code"] = item.get("exit_code")
+                message = self._message(item.get("command"))
+            elif item_type == "file_change":
+                changes = item.get("changes") or []
+                paths = [
+                    str(change.get("path"))
+                    for change in changes
+                    if isinstance(change, dict) and change.get("path")
+                ]
+                metadata["changed_files"] = len(paths)
+                message = self._message(", ".join(paths) or "File change event.")
+            elif item_type == "mcp_tool_call":
+                metadata["server"] = item.get("server", "")
+                metadata["tool"] = item.get("tool", "")
+                message = self._message(
+                    f"{item.get('server', 'mcp')}.{item.get('tool', 'tool')}"
+                )
+            elif item_type == "web_search":
+                message = self._message(item.get("query"))
+            elif item_type in {"agent_message", "reasoning"}:
+                message = self._message(item.get("text"))
+            elif item_type == "error":
+                status = "failed"
+                message = self._message(item.get("message"))
+            else:
+                message = self._message(item_type or event_type)
+        else:
+            stage = "codex.event"
+            status = "completed"
+            message = self._message(event_type)
+
+        return {
+            "stage": stage,
+            "status": status,
+            "message": message,
+            "usage": usage,
+            "metadata": metadata,
+        }
 
     def run(
         self,
@@ -223,43 +330,83 @@ class CodexExecutionWorker:
             "timeoutMs": self.request.codex_timeout_ms,
             "reasoningEffort": self.request.codex_reasoning_effort,
         }
+        runtime_events: list[dict[str, Any]] = []
+        result_payload: dict[str, Any] | None = None
+        bridge_error: str | None = None
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 [self.node_executable, str(self.bridge_path)],
                 cwd=self.project_root,
-                input=json.dumps(request_payload),
                 text=True,
-                capture_output=True,
-                timeout=(self.request.codex_timeout_ms / 1_000) + 15,
-                check=False,
+                encoding="utf-8",
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
             )
-        except subprocess.TimeoutExpired as error:
-            return ExecutionResult(
-                executor="codex-sdk-live",
-                condition="with_skill",
-                passed=False,
-                pass_rate=0,
-                duration_ms=self.request.codex_timeout_ms,
-                summary="Codex SDK execution exceeded its timeout.",
-                error=str(error),
-            )
-
-        if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
+        except OSError as error:
             return ExecutionResult(
                 executor="codex-sdk-live",
                 condition="with_skill",
                 passed=False,
                 pass_rate=0,
                 duration_ms=0,
+                summary="Codex SDK bridge could not be started.",
+                error=str(error),
+            )
+
+        assert process.stdin is not None
+        assert process.stdout is not None
+        process.stdin.write(json.dumps(request_payload))
+        process.stdin.close()
+
+        watchdog = threading.Timer(
+            (self.request.codex_timeout_ms / 1_000) + 15,
+            process.kill,
+        )
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            for line in process.stdout:
+                if not line.strip():
+                    continue
+                try:
+                    envelope = json.loads(line)
+                except json.JSONDecodeError as error:
+                    bridge_error = f"Invalid bridge NDJSON: {error}"
+                    continue
+                kind = envelope.get("kind")
+                if kind == "event":
+                    runtime_event = self._runtime_event(envelope)
+                    runtime_events.append(runtime_event)
+                    if self._event_callback is not None:
+                        self._event_callback(runtime_event)
+                elif kind == "result":
+                    result_payload = envelope.get("result")
+                elif kind == "bridge_error":
+                    bridge_error = str(envelope.get("error") or "Bridge failed.")
+        finally:
+            watchdog.cancel()
+
+        return_code = process.wait()
+        stderr = process.stderr.read().strip() if process.stderr else ""
+        if return_code != 0 or result_payload is None:
+            detail = bridge_error or stderr
+            return ExecutionResult(
+                executor="codex-sdk-live",
+                condition="with_skill",
+                passed=False,
+                pass_rate=0,
+                duration_ms=self.request.codex_timeout_ms if return_code < 0 else 0,
                 summary="Codex SDK bridge failed before verification.",
-                error=detail or f"Bridge exited with code {completed.returncode}.",
+                runtime_events=runtime_events,
+                error=detail or f"Bridge exited with code {return_code}.",
             )
 
         try:
-            payload = json.loads(completed.stdout)
-            return ExecutionResult.model_validate(payload)
-        except (json.JSONDecodeError, ValueError) as error:
+            result_payload["runtime_events"] = runtime_events
+            return ExecutionResult.model_validate(result_payload)
+        except ValueError as error:
             return ExecutionResult(
                 executor="codex-sdk-live",
                 condition="with_skill",
@@ -267,5 +414,6 @@ class CodexExecutionWorker:
                 pass_rate=0,
                 duration_ms=0,
                 summary="Codex SDK bridge returned an invalid result.",
+                runtime_events=runtime_events,
                 error=str(error),
             )
