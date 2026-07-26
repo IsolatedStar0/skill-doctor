@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from uuid import uuid4
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langchain_core.runnables import RunnableConfig
 
 from .models import (
     AgentState,
@@ -50,7 +51,14 @@ def _next_patch_version(version: str) -> str:
     return f"{version}+repair.1"
 
 
-def build_agent_graph(worker: ExecutionWorker):
+def build_agent_graph(
+    worker: ExecutionWorker,
+    runtime_event_observer: Callable[
+        [dict[str, Any], RunnableConfig],
+        None,
+    ]
+    | None = None,
+):
     """Compile the Skill Doctor lifecycle around an execution worker."""
 
     def prepare(state: AgentState) -> dict[str, Any]:
@@ -66,14 +74,26 @@ def build_agent_graph(worker: ExecutionWorker):
             ],
         }
 
-    def execute(state: AgentState) -> dict[str, Any]:
-        result = worker.run(
-            run_id=state["run_id"],
-            attempt=state["attempt"],
-            task=state["task"],
-            skill_id=state["skill_id"],
-            skill_content=state["skill_content"],
-        )
+    def execute(
+        state: AgentState,
+        config: RunnableConfig,
+    ) -> dict[str, Any]:
+        callback_setter = getattr(worker, "set_event_callback", None)
+        if callable(callback_setter) and runtime_event_observer is not None:
+            callback_setter(
+                lambda event: runtime_event_observer(event, config)
+            )
+        try:
+            result = worker.run(
+                run_id=state["run_id"],
+                attempt=state["attempt"],
+                task=state["task"],
+                skill_id=state["skill_id"],
+                skill_content=state["skill_content"],
+            )
+        finally:
+            if callable(callback_setter):
+                callback_setter(None)
         payload = result.model_dump(mode="json")
         runtime_events = [
             RunEvent(

@@ -87,8 +87,10 @@ $env:LANGSMITH_PROJECT="skill-doctor-dev"
 npm run agent:api
 ```
 
-Each Skill Doctor run becomes one root trace. LangGraph lifecycle events and
-live Codex SDK events are attached as child runs with attempt, source, status,
-metadata, and token usage. The final `/runs/stream` snapshot includes
+Each Skill Doctor run becomes exactly one native LangGraph root trace named
+`skill-doctor.run`. LangGraph records lifecycle nodes automatically; only the
+otherwise invisible live Codex SDK events are added as child runs under the
+active `execute` node, with attempt, source, status, metadata, and token usage.
+The final `/runs/stream` snapshot includes
 `observability.trace_id` and, when LangSmith resolves it, `trace_url`; the
 dashboard exposes that URL as **OPEN IN LANGSMITH**.

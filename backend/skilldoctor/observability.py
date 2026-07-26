@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from uuid import UUID, uuid4
 
 from .models import RunRequest
 
@@ -11,7 +12,7 @@ def _truthy(value: str | None) -> bool:
 
 
 class LangSmithRunExporter:
-    """Best-effort LangSmith mirror for the local source-of-truth trace."""
+    """Attach Codex events to LangGraph's single native LangSmith trace."""
 
     def __init__(self, run_id: str, request: RunRequest) -> None:
         self.run_id = run_id
@@ -21,7 +22,8 @@ class LangSmithRunExporter:
         self.trace_id: str | None = None
         self.trace_url: str | None = None
         self.error: str | None = None
-        self._root: Any | None = None
+        self._trace_uuid: UUID | None = None
+        self._client: Any | None = None
         self._finished = False
 
         api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
@@ -31,8 +33,6 @@ class LangSmithRunExporter:
 
         try:
             from langsmith import Client
-            from langsmith.run_trees import RunTree
-
             client_options: dict[str, Any] = {
                 "api_key": api_key,
                 "api_url": os.getenv(
@@ -43,31 +43,10 @@ class LangSmithRunExporter:
             workspace_id = os.getenv("LANGSMITH_WORKSPACE_ID", "").strip()
             if workspace_id:
                 client_options["workspace_id"] = workspace_id
-            client = Client(**client_options)
-            self._root = RunTree(
-                name="skill-doctor.run",
-                run_type="chain",
-                inputs={
-                    "run_id": run_id,
-                    "task": request.task,
-                    "skill_id": request.skill_id,
-                    "skill_version": request.skill_version,
-                    "executor": request.executor,
-                    "scenario": request.scenario,
-                },
-                project_name=self.project,
-                tags=["skill-doctor", request.executor, request.skill_id],
-                extra={
-                    "metadata": {
-                        "thread_id": run_id,
-                        "skill_id": request.skill_id,
-                        "executor": request.executor,
-                    }
-                },
-                ls_client=client,
-            )
-            self.trace_id = str(self._root.trace_id)
-            self._root.post()
+            self._client = Client(**client_options)
+            self._trace_uuid = uuid4()
+            self.trace_id = str(self._trace_uuid)
+            self._request = request
             self.status = "active"
         except Exception as error:  # tracing must never break the agent
             self._degrade(error)
@@ -87,13 +66,49 @@ class LangSmithRunExporter:
             result["error"] = self.error
         return result
 
-    def record_event(self, event: dict[str, Any]) -> None:
-        if self._root is None or self._finished or self.status == "degraded":
+    def graph_config(self) -> dict[str, Any]:
+        if self._trace_uuid is None:
+            return {}
+        return {
+            "run_id": self._trace_uuid,
+            "run_name": "skill-doctor.run",
+            "tags": [
+                "skill-doctor",
+                self._request.executor,
+                self._request.skill_id,
+            ],
+            "metadata": {
+                "thread_id": self.run_id,
+                "skill_id": self._request.skill_id,
+                "skill_version": self._request.skill_version,
+                "executor": self._request.executor,
+                "scenario": self._request.scenario,
+                "ls_agent_type": "root",
+            },
+        }
+
+    def record_event(
+        self,
+        event: dict[str, Any],
+        config: dict[str, Any] | None = None,
+    ) -> None:
+        if (
+            self._trace_uuid is None
+            or self._finished
+            or self.status == "degraded"
+        ):
             return
         try:
+            from langsmith.run_trees import RunTree
+
+            parent = RunTree.from_runnable_config(config)
+            if parent is None:
+                raise RuntimeError(
+                    "Codex event has no active LangGraph trace parent."
+                )
             stage = str(event.get("stage", "unknown"))
             status = str(event.get("status", "completed"))
-            child = self._root.create_child(
+            child = parent.create_child(
                 name=stage,
                 run_type=self._run_type(stage),
                 inputs={
@@ -131,19 +146,20 @@ class LangSmithRunExporter:
         result: dict[str, Any] | None = None,
         error: BaseException | None = None,
     ) -> None:
-        if self._root is None or self._finished:
+        if self._trace_uuid is None or self._finished:
             return
         self._finished = True
         if self.status == "degraded":
             return
         try:
-            outputs = self._summary(result) if result is not None else None
-            self._root.end(
-                outputs=outputs,
-                error=str(error) if error is not None else None,
+            from langchain_core.tracers.langchain import (
+                wait_for_all_tracers,
             )
-            self._root.patch()
-            self.trace_url = self._root.get_url()
+
+            wait_for_all_tracers()
+            self._client.flush(timeout=5)
+            run = self._client.read_run(self._trace_uuid)
+            self.trace_url = self._client.get_run_url(run=run)
             self.status = "completed" if error is None else "failed"
         except Exception as trace_error:  # tracing must never break the agent
             self._degrade(trace_error)
@@ -183,25 +199,6 @@ class LangSmithRunExporter:
                 "reasoning": reasoning_tokens
             }
         return result
-
-    @staticmethod
-    def _summary(result: dict[str, Any]) -> dict[str, Any]:
-        execution = result.get("execution", {})
-        verification = result.get("verification", {})
-        return {
-            "status": result.get("status"),
-            "stop_reason": result.get("stop_reason"),
-            "attempt": result.get("attempt"),
-            "pass_rate": execution.get("pass_rate"),
-            "duration_ms": execution.get("duration_ms"),
-            "usage": execution.get("usage"),
-            "verification": {
-                "decision": verification.get("decision"),
-                "pass_rate_delta": verification.get("pass_rate_delta"),
-                "regression_rate": verification.get("regression_rate"),
-            },
-        }
-
 
 def create_observability_exporter(
     run_id: str,

@@ -170,10 +170,11 @@ $env:LANGSMITH_PROJECT="skill-doctor-dev"
 npm run agent:api
 ```
 
-每次运行会创建一条根 trace，并把 LangGraph 节点与 Codex SDK 内部事件映射为
-子 run。最终状态包含 `trace_id` 和可用时的 `trace_url`，页面会显示
-`OPEN IN LANGSMITH` 入口。可复制的配置模板见 `.env.example`，不要提交真实
-API Key。
+每次运行只创建一条名为 `skill-doctor.run` 的 LangGraph 原生根 trace。
+LangGraph 自动记录生命周期节点；只有框架无法观察到的 Codex SDK 内部事件会
+作为当前 `execute` 节点的子 run 补充上报。最终状态包含 `trace_id` 和可用时的
+`trace_url`，页面会显示 `OPEN IN LANGSMITH` 入口。可复制的配置模板见
+`.env.example`，不要提交真实 API Key。
 
 ### 真实 CodexExecutionWorker
 

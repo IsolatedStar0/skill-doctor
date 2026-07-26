@@ -99,16 +99,21 @@ class RunService:
     def run(self, request: RunRequest) -> dict[str, Any]:
         run_id = f"lg-{uuid4().hex[:12]}"
         exporter = self.exporter_factory(run_id, request)
-        graph = build_agent_graph(self._worker(request))
+        graph = build_agent_graph(
+            self._worker(request),
+            runtime_event_observer=exporter.record_event,
+        )
         initial_state = self._initial_state(request, run_id)
         initial_state["observability"] = exporter.snapshot()
+        config = {
+            **exporter.graph_config(),
+            "configurable": {"thread_id": run_id},
+        }
         try:
             result = graph.invoke(
                 initial_state,
-                config={"configurable": {"thread_id": run_id}},
+                config=config,
             )
-            for event in result.get("events", []):
-                exporter.record_event(event)
             exporter.finish(result)
         except BaseException as error:
             exporter.finish(error=error)
@@ -121,18 +126,26 @@ class RunService:
         run_id = f"lg-{uuid4().hex[:12]}"
         exporter = self.exporter_factory(run_id, request)
         worker = self._worker(request)
-        graph = build_agent_graph(worker)
         updates: queue.Queue[tuple[str, Any]] = queue.Queue()
         latest: dict[str, Any] | None = None
         pending_runtime_events: list[dict[str, Any]] = []
-        seen_graph_events: set[int] = set()
         exporter_finished = False
 
-        callback_setter = getattr(worker, "set_event_callback", None)
-        if callable(callback_setter):
-            callback_setter(
-                lambda event: updates.put(("runtime_event", event))
-            )
+        def observe_runtime_event(
+            event: dict[str, Any],
+            config: dict[str, Any],
+        ) -> None:
+            exporter.record_event(event, config)
+            updates.put(("runtime_event", event))
+
+        graph = build_agent_graph(
+            worker,
+            runtime_event_observer=observe_runtime_event,
+        )
+        config = {
+            **exporter.graph_config(),
+            "configurable": {"thread_id": run_id},
+        }
 
         def produce() -> None:
             try:
@@ -140,7 +153,7 @@ class RunService:
                 initial_state["observability"] = exporter.snapshot()
                 for state in graph.stream(
                     initial_state,
-                    config={"configurable": {"thread_id": run_id}},
+                    config=config,
                     stream_mode="values",
                 ):
                     updates.put(("state", state))
@@ -160,19 +173,6 @@ class RunService:
                 kind, payload = updates.get()
                 if kind == "state":
                     snapshot = deepcopy(payload)
-                    for event in snapshot.get("events", []):
-                        sequence = int(event.get("sequence", 0))
-                        if (
-                            sequence not in seen_graph_events
-                            and not str(event.get("stage", "")).startswith(
-                                "codex."
-                            )
-                        ):
-                            exporter.record_event(event)
-                            seen_graph_events.add(sequence)
-                    if snapshot.get("status") in {"passed", "failed"}:
-                        exporter.finish(snapshot)
-                        exporter_finished = True
                     snapshot["observability"] = exporter.snapshot()
                     latest = snapshot
                     pending_runtime_events = []
@@ -181,7 +181,6 @@ class RunService:
                         time.sleep(request.stream_delay_ms / 1_000)
                 elif kind == "runtime_event":
                     pending_runtime_events.append(payload)
-                    exporter.record_event(payload)
                     if latest is None:
                         continue
                     snapshot = deepcopy(latest)
@@ -208,10 +207,16 @@ class RunService:
                     exporter_finished = True
                     raise payload
                 elif kind == "done":
+                    before = exporter.snapshot()
+                    exporter.finish(latest)
+                    exporter_finished = True
+                    after = exporter.snapshot()
+                    if latest is not None and after != before:
+                        latest = deepcopy(latest)
+                        latest["observability"] = after
+                        yield latest
                     break
         finally:
-            if callable(callback_setter):
-                callback_setter(None)
             producer.join(timeout=1)
             if not exporter_finished:
                 exporter.finish(latest)
