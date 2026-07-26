@@ -171,6 +171,19 @@ export default function LangGraphDashboard() {
         <div className="graph-api">
           <span>STREAM ENDPOINT</span>
           <code>{apiUrl}/runs/stream</code>
+          {snapshot?.observability?.trace_url ? (
+            <a
+              href={snapshot.observability.trace_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              OPEN IN LANGSMITH ↗
+            </a>
+          ) : (
+            <small>
+              LANGSMITH {snapshot?.observability?.status ?? "OPTIONAL"}
+            </small>
+          )}
         </div>
         {uiStatus === "running" ? (
           <button className="graph-run secondary" type="button" onClick={cancel}>

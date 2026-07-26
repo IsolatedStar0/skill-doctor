@@ -6,11 +6,15 @@ import threading
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from .graph import build_agent_graph
 from .models import AgentState, RunEvent, RunRequest
+from .observability import (
+    LangSmithRunExporter,
+    create_observability_exporter,
+)
 from .workers import (
     BenchmarkReplayWorker,
     CodexExecutionWorker,
@@ -20,12 +24,20 @@ from .workers import (
 
 
 class RunService:
-    def __init__(self, project_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        project_root: Path | None = None,
+        exporter_factory: Callable[
+            [str, RunRequest],
+            LangSmithRunExporter,
+        ] = create_observability_exporter,
+    ) -> None:
         self.project_root = (
             project_root
             or Path(__file__).resolve().parents[2]
         ).resolve()
         self.report_directory = self.project_root / "reports" / "langgraph"
+        self.exporter_factory = exporter_factory
 
     def _worker(self, request: RunRequest) -> ExecutionWorker:
         if request.executor == "codex":
@@ -86,21 +98,35 @@ class RunService:
 
     def run(self, request: RunRequest) -> dict[str, Any]:
         run_id = f"lg-{uuid4().hex[:12]}"
+        exporter = self.exporter_factory(run_id, request)
         graph = build_agent_graph(self._worker(request))
-        result = graph.invoke(
-            self._initial_state(request, run_id),
-            config={"configurable": {"thread_id": run_id}},
-        )
+        initial_state = self._initial_state(request, run_id)
+        initial_state["observability"] = exporter.snapshot()
+        try:
+            result = graph.invoke(
+                initial_state,
+                config={"configurable": {"thread_id": run_id}},
+            )
+            for event in result.get("events", []):
+                exporter.record_event(event)
+            exporter.finish(result)
+        except BaseException as error:
+            exporter.finish(error=error)
+            raise
+        result["observability"] = exporter.snapshot()
         self._save(result)
         return result
 
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:
         run_id = f"lg-{uuid4().hex[:12]}"
+        exporter = self.exporter_factory(run_id, request)
         worker = self._worker(request)
         graph = build_agent_graph(worker)
         updates: queue.Queue[tuple[str, Any]] = queue.Queue()
         latest: dict[str, Any] | None = None
         pending_runtime_events: list[dict[str, Any]] = []
+        seen_graph_events: set[int] = set()
+        exporter_finished = False
 
         callback_setter = getattr(worker, "set_event_callback", None)
         if callable(callback_setter):
@@ -110,8 +136,10 @@ class RunService:
 
         def produce() -> None:
             try:
+                initial_state = self._initial_state(request, run_id)
+                initial_state["observability"] = exporter.snapshot()
                 for state in graph.stream(
-                    self._initial_state(request, run_id),
+                    initial_state,
                     config={"configurable": {"thread_id": run_id}},
                     stream_mode="values",
                 ):
@@ -131,13 +159,29 @@ class RunService:
             while True:
                 kind, payload = updates.get()
                 if kind == "state":
-                    latest = payload
+                    snapshot = deepcopy(payload)
+                    for event in snapshot.get("events", []):
+                        sequence = int(event.get("sequence", 0))
+                        if (
+                            sequence not in seen_graph_events
+                            and not str(event.get("stage", "")).startswith(
+                                "codex."
+                            )
+                        ):
+                            exporter.record_event(event)
+                            seen_graph_events.add(sequence)
+                    if snapshot.get("status") in {"passed", "failed"}:
+                        exporter.finish(snapshot)
+                        exporter_finished = True
+                    snapshot["observability"] = exporter.snapshot()
+                    latest = snapshot
                     pending_runtime_events = []
-                    yield payload
+                    yield snapshot
                     if request.stream_delay_ms:
                         time.sleep(request.stream_delay_ms / 1_000)
                 elif kind == "runtime_event":
                     pending_runtime_events.append(payload)
+                    exporter.record_event(payload)
                     if latest is None:
                         continue
                     snapshot = deepcopy(latest)
@@ -160,6 +204,8 @@ class RunService:
                     snapshot["status"] = "running"
                     yield snapshot
                 elif kind == "error":
+                    exporter.finish(error=payload)
+                    exporter_finished = True
                     raise payload
                 elif kind == "done":
                     break
@@ -167,7 +213,10 @@ class RunService:
             if callable(callback_setter):
                 callback_setter(None)
             producer.join(timeout=1)
+            if not exporter_finished:
+                exporter.finish(latest)
         if latest is not None:
+            latest["observability"] = exporter.snapshot()
             self._save(latest)
 
     def get(self, run_id: str) -> dict[str, Any]:

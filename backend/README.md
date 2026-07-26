@@ -19,7 +19,7 @@ Evidence Snapshot hashes, token accounting, or paired benchmark engine.
 Install once from the repository root:
 
 ```bash
-python -m pip install -e "backend[api,dev]"
+python -m pip install -e "backend[api,dev,observability]"
 ```
 
 Run the deterministic self-repair loop:
@@ -71,3 +71,24 @@ Endpoints:
 - `GET /runs/{run_id}`
 
 Completed runs are stored under `reports/langgraph/`.
+
+## Optional LangSmith mirror
+
+The local NDJSON stream and saved Evidence Snapshot remain the source of
+truth. LangSmith is an optional second observability surface; missing
+credentials or exporter failures never stop the agent loop.
+
+Copy `.env.example` values into your shell and enable tracing:
+
+```powershell
+$env:LANGSMITH_TRACING="true"
+$env:LANGSMITH_API_KEY="<your-key>"
+$env:LANGSMITH_PROJECT="skill-doctor-dev"
+npm run agent:api
+```
+
+Each Skill Doctor run becomes one root trace. LangGraph lifecycle events and
+live Codex SDK events are attached as child runs with attempt, source, status,
+metadata, and token usage. The final `/runs/stream` snapshot includes
+`observability.trace_id` and, when LangSmith resolves it, `trace_url`; the
+dashboard exposes that URL as **OPEN IN LANGSMITH**.

@@ -35,6 +35,15 @@ export type LangGraphState = {
   max_attempts: number;
   status: string;
   stop_reason: string;
+  observability?: {
+    provider: "langsmith";
+    enabled: boolean;
+    status: "disabled" | "active" | "completed" | "failed" | "degraded";
+    project: string;
+    trace_id?: string;
+    trace_url?: string;
+    error?: string;
+  };
   events: LangGraphEvent[];
   execution?: LangGraphExecution;
   baseline_execution?: LangGraphExecution;

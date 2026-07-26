@@ -156,6 +156,25 @@ API 提供 `POST /runs`、`POST /runs/stream` 和 `GET /runs/{run_id}`。
 `NEXT_PUBLIC_SKILL_DOCTOR_API_URL`。安装 `backend[api]` 后也可以运行
 `npm run agent:api:fastapi` 使用 FastAPI 入口。
 
+### 可选 LangSmith 双写
+
+本地 NDJSON trace、Evidence Snapshot 和运行报告仍是事实来源；LangSmith
+只作为第二可观测界面。未配置凭证、网络不可用或 exporter 异常都不会中断
+Agent 的归因、修复和验证流程。
+
+```powershell
+python -m pip install -e "backend[api,dev,observability]"
+$env:LANGSMITH_TRACING="true"
+$env:LANGSMITH_API_KEY="<your-key>"
+$env:LANGSMITH_PROJECT="skill-doctor-dev"
+npm run agent:api
+```
+
+每次运行会创建一条根 trace，并把 LangGraph 节点与 Codex SDK 内部事件映射为
+子 run。最终状态包含 `trace_id` 和可用时的 `trace_url`，页面会显示
+`OPEN IN LANGSMITH` 入口。可复制的配置模板见 `.env.example`，不要提交真实
+API Key。
+
 ### 真实 CodexExecutionWorker
 
 LangGraph 现在支持 `executor=codex`，不再只能重放历史配对报告。Python

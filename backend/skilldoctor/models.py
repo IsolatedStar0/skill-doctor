@@ -135,4 +135,5 @@ class AgentState(TypedDict):
     attribution: NotRequired[dict[str, Any]]
     repair_patch: NotRequired[dict[str, Any]]
     verification: NotRequired[dict[str, Any]]
+    observability: NotRequired[dict[str, Any]]
     events: Annotated[list[dict[str, Any]], add]
