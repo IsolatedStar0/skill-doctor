@@ -1,6 +1,7 @@
 import http.client
 import json
 import threading
+import time
 from pathlib import Path
 
 from backend.skilldoctor.http_server import make_handler
@@ -50,6 +51,42 @@ def test_dependency_free_server_streams_graph_states(tmp_path: Path) -> None:
         assert states[0]["events"] == []
         assert states[-1]["status"] == "passed"
         assert states[-1]["verification"]["decision"] == "ADOPT"
+
+        list_connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        list_connection.request("GET", "/runs")
+        list_response = list_connection.getresponse()
+        listed = json.loads(list_response.read().decode("utf-8"))
+
+        assert list_response.status == 200
+        assert listed["runs"][0]["run_id"] == states[-1]["run_id"]
+        assert listed["runs"][0]["status"] == "passed"
+
+        event_connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        event_connection.request("GET", "/runs/events")
+        event_response = event_connection.getresponse()
+        event_id = event_response.readline().decode("utf-8").strip()
+        event_data = event_response.readline().decode("utf-8").strip()
+
+        assert event_response.status == 200
+        assert event_response.getheader("Content-Type").startswith(
+            "text/event-stream"
+        )
+        assert event_id.startswith(f"id: {states[-1]['run_id']}:")
+        assert json.loads(event_data.removeprefix("data: "))["state"][
+            "run_id"
+        ] == states[-1]["run_id"]
+
+        event_connection.close()
+        service.registry.publish(states[-1])
+        time.sleep(0.3)
     finally:
         server.shutdown()
         server.server_close()

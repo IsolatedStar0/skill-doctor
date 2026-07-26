@@ -31,3 +31,7 @@ def test_health_and_run_api(tmp_path: Path) -> None:
     stored = client.get(f"/runs/{payload['run_id']}")
     assert stored.status_code == 200
     assert stored.json()["verification"]["decision"] == "ADOPT"
+
+    listed = client.get("/runs")
+    assert listed.status_code == 200
+    assert listed.json()["runs"][0]["run_id"] == payload["run_id"]

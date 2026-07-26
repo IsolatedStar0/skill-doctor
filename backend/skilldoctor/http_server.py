@@ -70,6 +70,43 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                     {"status": "ok", "orchestrator": "langgraph"},
                 )
                 return
+            if path == "/runs":
+                self._json(
+                    HTTPStatus.OK,
+                    {"runs": service.list_runs()},
+                )
+                return
+            if path == "/runs/events":
+                self.send_response(HTTPStatus.OK)
+                self._cors()
+                self.send_header(
+                    "Content-Type",
+                    "text/event-stream; charset=utf-8",
+                )
+                self.send_header("Cache-Control", "no-cache, no-transform")
+                self.send_header("X-Accel-Buffering", "no")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                try:
+                    for envelope in service.registry.events():
+                        if envelope is None:
+                            payload = b": heartbeat\n\n"
+                        else:
+                            state = envelope["state"]
+                            event_id = (
+                                f"{state['run_id']}:{envelope['updated_at']}"
+                            )
+                            payload = (
+                                f"id: {event_id}\n"
+                                f"data: {json.dumps(envelope, ensure_ascii=False)}\n\n"
+                            ).encode("utf-8")
+                        self.wfile.write(payload)
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    self.close_connection = True
+                return
             if path.startswith("/runs/"):
                 try:
                     self._json(HTTPStatus.OK, service.get(path.removeprefix("/runs/")))

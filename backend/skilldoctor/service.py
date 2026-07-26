@@ -15,6 +15,7 @@ from .observability import (
     LangSmithRunExporter,
     create_observability_exporter,
 )
+from .registry import RunRegistry
 from .workers import (
     BenchmarkReplayWorker,
     CodexExecutionWorker,
@@ -97,30 +98,13 @@ class RunService:
         )
 
     def run(self, request: RunRequest) -> dict[str, Any]:
-        run_id = f"lg-{uuid4().hex[:12]}"
-        exporter = self.exporter_factory(run_id, request)
-        graph = build_agent_graph(
-            self._worker(request),
-            runtime_event_observer=exporter.record_event,
-        )
-        initial_state = self._initial_state(request, run_id)
-        initial_state["observability"] = exporter.snapshot()
-        config = {
-            **exporter.graph_config(),
-            "configurable": {"thread_id": run_id},
-        }
-        try:
-            result = graph.invoke(
-                initial_state,
-                config=config,
-            )
-            exporter.finish(result)
-        except BaseException as error:
-            exporter.finish(error=error)
-            raise
-        result["observability"] = exporter.snapshot()
-        self._save(result)
-        return result
+        latest: dict[str, Any] | None = None
+        immediate = request.model_copy(update={"stream_delay_ms": 0})
+        for latest in self.stream(immediate):
+            pass
+        if latest is None:
+            raise RuntimeError("Agent run completed without a state snapshot.")
+        return latest
 
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:
         run_id = f"lg-{uuid4().hex[:12]}"
@@ -176,6 +160,7 @@ class RunService:
                     snapshot["observability"] = exporter.snapshot()
                     latest = snapshot
                     pending_runtime_events = []
+                    self.registry.publish(snapshot)
                     yield snapshot
                     if request.stream_delay_ms:
                         time.sleep(request.stream_delay_ms / 1_000)
@@ -201,6 +186,7 @@ class RunService:
                         *live_events,
                     ]
                     snapshot["status"] = "running"
+                    self.registry.publish(snapshot)
                     yield snapshot
                 elif kind == "error":
                     exporter.finish(error=payload)
@@ -214,6 +200,7 @@ class RunService:
                     if latest is not None and after != before:
                         latest = deepcopy(latest)
                         latest["observability"] = after
+                        self.registry.publish(latest)
                         yield latest
                     break
         finally:
@@ -222,15 +209,23 @@ class RunService:
                 exporter.finish(latest)
         if latest is not None:
             latest["observability"] = exporter.snapshot()
+            self.registry.publish(latest)
             self._save(latest)
 
     def get(self, run_id: str) -> dict[str, Any]:
         if not run_id.startswith("lg-") or not run_id[3:].isalnum():
             raise ValueError("Invalid run id.")
         path = self.report_directory / f"{run_id}.json"
-        if not path.is_file():
-            raise FileNotFoundError(run_id)
-        return json.loads(path.read_text(encoding="utf-8"))
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+        return self.registry.get(run_id)
+
+    def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self.registry.list(limit)
+
+    @property
+    def registry(self) -> RunRegistry:
+        return RunRegistry(self.report_directory / ".registry")
 
     def _save(self, result: dict[str, Any]) -> None:
         self.report_directory.mkdir(parents=True, exist_ok=True)

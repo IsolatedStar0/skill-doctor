@@ -610,7 +610,13 @@ function BenchmarkDashboard({
 }
 
 export default function DemoApp() {
-  const { snapshot, clearRun } = useRunStore();
+  const {
+    snapshot,
+    clearRun,
+    runs,
+    registryStatus,
+    selectRun,
+  } = useRunStore();
   const [view, setView] = useState<View>("overview");
   const [selectedCaseId, setSelectedCaseId] = useState(demoCases[0].id);
   const [importedCases, setImportedCases] = useState<DemoCase[]>([]);
@@ -675,6 +681,11 @@ export default function DemoApp() {
 
   const rerun = () => {
     setView("orchestrator");
+  };
+
+  const openRun = async (runId: string) => {
+    await selectRun(runId);
+    setView("overview");
   };
 
   const selectCase = (caseId: string) => {
@@ -780,6 +791,44 @@ export default function DemoApp() {
             </button>
           </div>
         </header>
+
+        <section className="run-registry panel" aria-label="Agent runs">
+          <div className="run-registry-heading">
+            <div>
+              <span>RUN REGISTRY / SSE</span>
+              <strong>后端运行中心</strong>
+            </div>
+            <small className={registryStatus}>
+              <i />
+              {registryStatus}
+            </small>
+          </div>
+          <div className="run-registry-list">
+            {runs.length ? (
+              runs.slice(0, 8).map((run) => (
+                <button
+                  type="button"
+                  key={run.run_id}
+                  className={
+                    snapshot?.run_id === run.run_id ? "active" : ""
+                  }
+                  onClick={() => void openRun(run.run_id)}
+                >
+                  <span>{run.status}</span>
+                  <strong>{run.skill_id}</strong>
+                  <code>{run.run_id}</code>
+                  <small>
+                    {run.executor} · {run.event_count} events
+                  </small>
+                </button>
+              ))
+            ) : (
+              <p>
+                等待后端 Run；CLI、API 或当前页面启动的运行都会自动出现在这里。
+              </p>
+            )}
+          </div>
+        </section>
 
         {importState && (
           <div

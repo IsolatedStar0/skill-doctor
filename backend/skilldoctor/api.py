@@ -57,6 +57,28 @@ def stream_run(request: RunRequest) -> StreamingResponse:
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
+@app.get("/runs")
+def list_runs() -> dict:
+    return {"runs": service.list_runs()}
+
+
+@app.get("/runs/events")
+def stream_run_events() -> StreamingResponse:
+    def generate():
+        for envelope in service.registry.events():
+            if envelope is None:
+                yield ": heartbeat\n\n"
+                continue
+            state = envelope["state"]
+            event_id = f"{state['run_id']}:{envelope['updated_at']}"
+            yield (
+                f"id: {event_id}\n"
+                f"data: {json.dumps(envelope, ensure_ascii=False)}\n\n"
+            )
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.get("/runs/{run_id}")
 def get_run(run_id: str) -> dict:
     try:

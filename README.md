@@ -145,10 +145,17 @@ npm run agent:replay
 npm run agent:api
 ```
 
-API 提供 `POST /runs`、`POST /runs/stream` 和 `GET /runs/{run_id}`。
+API 提供 `POST /runs`、`POST /runs/stream`、`GET /runs`、
+`GET /runs/events`（SSE）和 `GET /runs/{run_id}`。
 每个节点都输出 attempt、stage、状态、token、pass rate 和证据哈希；完成的
 运行保存在 `reports/langgraph/`。平台异常会直接结束并保持
 `NO_SKILL_MUTATION`，只有高置信度的 Skill/loader 归因才能进入修复循环。
+
+所有入口共享文件型 Run Registry。`RunService.run()`、`RunService.stream()`、
+CLI、FastAPI 和零依赖 HTTP server 会在每次状态变化时原子发布快照；因此 CLI
+与 API 即使运行在不同进程，前端也能通过 `/runs/events` 自动发现。页面顶部的
+Run Registry 显示最近运行、SSE 连接状态和事件数量，选择任一 `run_id` 后，
+全部分析视图会切换到该 Run。
 
 页面中的 `LangGraph Loop` 会消费 `/runs/stream` 的 NDJSON 增量响应，并将
 每个完整 `AgentState` 写入前端唯一的 `RunStore`。运行概览、Trace、Token、
@@ -160,7 +167,8 @@ Trace。数据链路如下：
 ```text
 Codex SDK / Fixture Worker
 → LangGraph AgentState
-→ /runs/stream NDJSON
+→ Run Registry
+→ /runs/stream NDJSON + /runs/events SSE
 → frontend RunStore
 → Overview / Trace / Token / Attribution / Repair / Benchmark
                          ↘ Evidence Snapshot / LangSmith trace_url

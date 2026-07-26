@@ -64,10 +64,6 @@ export default function LangGraphDashboard() {
     },
     [],
   );
-  useEffect(() => {
-    if (snapshot?.status === "passed") setUiStatus("passed");
-    if (snapshot?.status === "failed") setUiStatus("failed");
-  }, [snapshot?.status]);
 
   const totalTokens = useMemo(() => tokens(snapshot), [snapshot]);
   const graphEventCount =
@@ -78,6 +74,10 @@ export default function LangGraphDashboard() {
       .length ?? 0;
   const terminal =
     snapshot?.status === "passed" || snapshot?.status === "failed";
+  const displayedStatus =
+    uiStatus === "idle" && terminal
+      ? (snapshot.status as "passed" | "failed")
+      : uiStatus;
   const progress = terminal
     ? 100
     : Math.min(96, Math.round((graphEventCount / 9) * 100));
@@ -136,9 +136,9 @@ export default function LangGraphDashboard() {
             <em>逐节点观察 Agent 自愈。</em>
           </h2>
         </div>
-        <div className={`graph-status ${uiStatus}`}>
+        <div className={`graph-status ${displayedStatus}`}>
           <i />
-          <span>{uiStatus.toUpperCase()}</span>
+          <span>{displayedStatus.toUpperCase()}</span>
           <small>{snapshot?.run_id ?? "等待启动"}</small>
         </div>
       </div>

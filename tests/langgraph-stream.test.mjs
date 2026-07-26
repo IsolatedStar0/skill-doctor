@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   consumeNdjson,
+  getAgentRun,
+  listAgentRuns,
   NdjsonParser,
+  subscribeAgentRuns,
 } from "../lib/langgraph-stream.ts";
 
 test("parses NDJSON split across arbitrary chunks", () => {
@@ -45,4 +48,77 @@ test("surfaces streamed server errors", () => {
     () => parser.feed('{"error":"invalid skill"}\n'),
     /invalid skill/,
   );
+});
+
+test("loads run registry summaries and selected snapshots", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return new Response(
+      JSON.stringify(
+        String(url).endsWith("/runs")
+          ? { runs: [{ run_id: "lg-list001" }] }
+          : { run_id: "lg-list001", events: [] },
+      ),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    const runs = await listAgentRuns("http://api.test/");
+    const state = await getAgentRun("lg-list001", "http://api.test/");
+
+    assert.equal(runs[0].run_id, "lg-list001");
+    assert.equal(state.run_id, "lg-list001");
+    assert.deepEqual(requests, [
+      "http://api.test/runs",
+      "http://api.test/runs/lg-list001",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("subscribes to cross-run SSE registry events", () => {
+  const OriginalEventSource = globalThis.EventSource;
+  class FakeEventSource {
+    static latest;
+
+    constructor(url) {
+      this.url = url;
+      FakeEventSource.latest = this;
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+  globalThis.EventSource = FakeEventSource;
+  const received = [];
+  const statuses = [];
+
+  try {
+    const unsubscribe = subscribeAgentRuns(
+      (event) => received.push(event.state.run_id),
+      (status) => statuses.push(status),
+      "http://api.test",
+    );
+    FakeEventSource.latest.onopen();
+    FakeEventSource.latest.onmessage({
+      data: JSON.stringify({
+        type: "run.updated",
+        updated_at: "2026-07-26T00:00:00Z",
+        state: { run_id: "lg-sse001" },
+      }),
+    });
+
+    assert.equal(FakeEventSource.latest.url, "http://api.test/runs/events");
+    assert.deepEqual(statuses, ["connected"]);
+    assert.deepEqual(received, ["lg-sse001"]);
+    unsubscribe();
+    assert.equal(FakeEventSource.latest.closed, true);
+  } finally {
+    globalThis.EventSource = OriginalEventSource;
+  }
 });
