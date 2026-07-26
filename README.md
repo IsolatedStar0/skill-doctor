@@ -244,6 +244,22 @@ LangGraph 生命周期节点和 Codex SDK 内部事件，Token 只在
 - control：不安装 Skill，只使用任务描述和模型基础知识
 - treatment：在 `.agents/skills/<id>/SKILL.md` 安装目标 Skill
 
+前端“配对评测”页面可以动态选择 Skill、任务、执行器和超时，一键创建
+一个 `bm-*` Benchmark 父 Run 与两个 `lg-*` Agent 子 Run。父子 Run 共用
+Run Registry，并通过 SSE/NDJSON 实时更新；可在 Benchmark 与两个子 Run
+之间双向跳转。
+
+对应接口：
+
+- `POST /benchmarks`：同步执行一组配对实验。
+- `POST /benchmarks/stream`：以 NDJSON 推送父 Run 状态。
+- `GET /benchmarks`：列出最近 Benchmark。
+- `GET /benchmarks/{benchmark_id}`：读取持久化结果。
+
+`fixture` 可离线验证整条链路，`replay` 可重放证据，`codex` 执行真实 SDK
+实验。`public/benchmarks/latest.json` 现在仅作为尚未产生动态结果时的离线
+兜底。
+
 运行三个真实 Codex SDK 配对 probe：
 
 ```bash
@@ -263,8 +279,8 @@ npm run bench:paired -- --resume reports/paired/<run-id>
 - Agent 运行后 git diff
 - 带 SHA-256 的 `evidence-snapshot.json`
 
-最新汇总写入 `public/benchmarks/latest.json`，页面中的“配对评测”直接读取这份
-报告。当前三组知识/计划 probe 的真实结果为：
+该批处理命令仍会将最新汇总写入 `public/benchmarks/latest.json`。当前三组
+知识/计划 probe 的真实结果为：
 
 | Skill | Without | With | Δ Pass rate | Token overhead | Regression |
 | --- | ---: | ---: | ---: | ---: | ---: |

@@ -41,7 +41,7 @@ class RunRegistry:
         if not self.directory.is_dir():
             return []
         records: list[tuple[int, dict[str, Any]]] = []
-        for path in self.directory.glob("lg-*.json"):
+        for path in self.directory.glob("*.json"):
             try:
                 envelope = self._read(path)
                 state = envelope["state"]
@@ -49,13 +49,16 @@ class RunRegistry:
                     (
                         path.stat().st_mtime_ns,
                         {
+                            "run_kind": state.get("run_kind", "agent"),
                             "run_id": state["run_id"],
-                            "skill_id": state["skill_id"],
-                            "skill_version": state["skill_version"],
-                            "executor": state["executor"],
-                            "scenario": state["scenario"],
-                            "attempt": state["attempt"],
-                            "max_attempts": state["max_attempts"],
+                            "parent_run_id": state.get("parent_run_id"),
+                            "skill_id": state.get("skill_id", ""),
+                            "skill_version": state.get("skill_version", ""),
+                            "executor": state.get("executor", ""),
+                            "scenario": state.get("scenario", ""),
+                            "condition": state.get("condition", "standard"),
+                            "attempt": state.get("attempt", 0),
+                            "max_attempts": state.get("max_attempts", 0),
                             "status": state["status"],
                             "stop_reason": state["stop_reason"],
                             "event_count": len(state.get("events", [])),
@@ -80,7 +83,7 @@ class RunRegistry:
             emitted = False
             if self.directory.is_dir():
                 paths = sorted(
-                    self.directory.glob("lg-*.json"),
+                    self.directory.glob("*.json"),
                     key=lambda path: path.stat().st_mtime_ns,
                 )
                 for path in paths:
@@ -107,7 +110,8 @@ class RunRegistry:
             time.sleep(poll_interval)
 
     def _path(self, run_id: str) -> Path:
-        if not run_id.startswith("lg-") or not run_id[3:].isalnum():
+        valid_prefix = run_id.startswith("lg-") or run_id.startswith("bm-")
+        if not valid_prefix or not run_id[3:].isalnum():
             raise ValueError("Invalid run id.")
         return self.directory / f"{run_id}.json"
 

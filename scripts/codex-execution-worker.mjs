@@ -144,12 +144,14 @@ async function main() {
     join(tmpdir(), `skill-doctor-${input.skillId}-${input.attempt}-`),
   );
   const skillDirectory = join(workspace, ".agents", "skills", input.skillId);
-  await mkdir(skillDirectory, { recursive: true });
-  await writeFile(
-    join(skillDirectory, "SKILL.md"),
-    skillDocument(input.skillId, content),
-    "utf8",
-  );
+  if (input.condition !== "without_skill") {
+    await mkdir(skillDirectory, { recursive: true });
+    await writeFile(
+      join(skillDirectory, "SKILL.md"),
+      skillDocument(input.skillId, content),
+      "utf8",
+    );
+  }
   await writeFile(
     join(workspace, "README.md"),
     "# Skill Doctor isolated Codex execution\n",
@@ -171,7 +173,9 @@ async function main() {
   await mkdir(artifactDirectory, { recursive: true });
 
   const prompt = [
-    "Use the installed Skill when it is applicable to the task.",
+    input.condition === "without_skill"
+      ? "Complete the task without access to the target Skill."
+      : "Use the installed Skill when it is applicable to the task.",
     "This is an isolated, read-only reliability evaluation.",
     "Do not modify files and do not execute the implementation.",
     "Return a concise implementation plan containing exact constraints and verification requirements.",
@@ -257,7 +261,12 @@ async function main() {
   const result = {
     executor: "codex-sdk-live",
     condition:
-      input.attempt === 0 ? "with_skill" : "with_repaired_skill",
+      input.condition === "without_skill" ||
+      input.condition === "with_skill"
+        ? input.condition
+        : input.attempt === 0
+          ? "with_skill"
+          : "with_repaired_skill",
     passed: error === null && assertions.every((item) => item.passed),
     pass_rate: passRate,
     duration_ms: durationMs,

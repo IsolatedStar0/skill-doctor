@@ -21,7 +21,7 @@ export type BenchmarkRun = {
   id: string;
   condition: BenchmarkCondition;
   status: BenchmarkRunStatus;
-  executor: "codex-sdk";
+  executor: string;
   taskKind: "knowledge-probe" | "coding-task";
   startedAt: string;
   durationMs: number;
@@ -64,7 +64,7 @@ export type PairedBenchmarkReport = {
   schemaVersion: "1.0";
   runId: string;
   generatedAt: string;
-  executor: "codex-sdk";
+  executor: string;
   taskKind: "knowledge-probe" | "coding-task";
   isModelResult: boolean;
   dataset: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeCase,
   demoCases,
@@ -15,7 +15,12 @@ import {
   TraceValidationError,
 } from "../lib/trace-adapter";
 import type { PairedBenchmarkReport } from "../lib/benchmark-engine";
-import type { LangGraphState } from "../lib/langgraph-stream";
+import {
+  streamBenchmarkRun,
+  type BenchmarkState,
+  type LangGraphState,
+  type RunSummary,
+} from "../lib/langgraph-stream";
 import {
   adaptLangGraphState,
   runEvidenceId,
@@ -349,21 +354,82 @@ function signedDuration(value: number | null) {
 }
 
 function BenchmarkDashboard({
-  report,
+  fallbackReport,
   activeRun,
+  activeBenchmark,
+  onBenchmarkState,
+  onOpenChild,
 }: {
-  report: PairedBenchmarkReport;
+  fallbackReport: PairedBenchmarkReport;
   activeRun: LangGraphState | null;
+  activeBenchmark: BenchmarkState | null;
+  onBenchmarkState: (state: BenchmarkState) => void;
+  onOpenChild: (runId: string) => void;
 }) {
+  const report = activeBenchmark?.report ?? fallbackReport;
+  const [executor, setExecutor] = useState<"fixture" | "replay" | "codex">(
+    "fixture",
+  );
+  const [skillId, setSkillId] = useState("tdd-workflow");
+  const [task, setTask] = useState(
+    "Use the target Skill to produce a verified implementation plan.",
+  );
+  const [timeoutSeconds, setTimeoutSeconds] = useState(180);
+  const [runStatus, setRunStatus] = useState<
+    "idle" | "running" | "completed" | "failed"
+  >("idle");
+  const [runError, setRunError] = useState<string | null>(null);
+  const benchmarkAbort = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      benchmarkAbort.current?.abort();
+    },
+    [],
+  );
+
   const linkedPair = activeRun
     ? report.pairs.find((pair) => pair.skillId === activeRun.skill_id)
     : undefined;
+
+  const runBenchmark = async () => {
+    benchmarkAbort.current?.abort();
+    const controller = new AbortController();
+    benchmarkAbort.current = controller;
+    setRunStatus("running");
+    setRunError(null);
+    try {
+      await streamBenchmarkRun(
+        {
+          executor,
+          scenario: "content-gap",
+          skill_id: skillId,
+          task,
+          codex_timeout_ms: timeoutSeconds * 1_000,
+        },
+        (state) => {
+          onBenchmarkState(state);
+          if (state.status === "completed") setRunStatus("completed");
+          if (state.status === "failed") setRunStatus("failed");
+        },
+        { signal: controller.signal },
+      );
+    } catch (error) {
+      if (controller.signal.aborted) {
+        setRunStatus("idle");
+        return;
+      }
+      setRunStatus("failed");
+      setRunError(
+        error instanceof Error ? error.message : "动态配对评测启动失败。",
+      );
+    }
+  };
 
   return (
     <section className="benchmark-view">
       <div className="section-intro benchmark-intro">
         <div>
-          <span className="kicker">LIVE CODEX SDK / PAIRED KNOWLEDGE PROBE</span>
+          <span className="kicker">DYNAMIC PAIRED SKILL EVALUATION</span>
           <h2>
             同一任务跑两次，量化 Skill 的
             <em>真实收益与成本。</em>
@@ -371,10 +437,142 @@ function BenchmarkDashboard({
         </div>
         <div className="benchmark-run-meta">
           <span>RUN ID</span>
-          <code>{report.runId}</code>
+          <code>{activeBenchmark?.run_id ?? report.runId}</code>
           <small>{new Date(report.generatedAt).toLocaleString("zh-CN")}</small>
         </div>
       </div>
+
+      <article className="benchmark-launcher panel">
+        <div>
+          <span>DYNAMIC PAIRED RUN</span>
+          <strong>从同一基线启动 Control / Treatment</strong>
+        </div>
+        <label>
+          <span>EXECUTOR</span>
+          <select
+            value={executor}
+            onChange={(event) =>
+              setExecutor(
+                event.target.value as "fixture" | "replay" | "codex",
+              )
+            }
+            disabled={runStatus === "running"}
+          >
+            <option value="fixture">Fixture</option>
+            <option value="replay">Codex Replay</option>
+            <option value="codex">Codex SDK Live</option>
+          </select>
+        </label>
+        <label>
+          <span>SKILL</span>
+          <select
+            value={skillId}
+            onChange={(event) => setSkillId(event.target.value)}
+            disabled={runStatus === "running"}
+          >
+            <option value="tdd-workflow">tdd-workflow</option>
+            <option value="python-observability">
+              python-observability
+            </option>
+            <option value="distributed-tracing">
+              distributed-tracing
+            </option>
+            <option value="spreadsheet-summary">
+              spreadsheet-summary
+            </option>
+          </select>
+        </label>
+        <label className="benchmark-task-input">
+          <span>TASK</span>
+          <input
+            value={task}
+            onChange={(event) => setTask(event.target.value)}
+            disabled={runStatus === "running"}
+          />
+        </label>
+        <label>
+          <span>TIMEOUT</span>
+          <input
+            type="number"
+            min={10}
+            max={600}
+            value={timeoutSeconds}
+            onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
+            disabled={runStatus === "running"}
+          />
+        </label>
+        {runStatus === "running" ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => benchmarkAbort.current?.abort()}
+          >
+            停止评测
+          </button>
+        ) : (
+          <button type="button" onClick={() => void runBenchmark()}>
+            启动配对评测 ↗
+          </button>
+        )}
+      </article>
+
+      {runError && <div className="graph-error">{runError}</div>}
+
+      {activeBenchmark && (
+        <article className="benchmark-live-pair panel">
+          <div className="panel-heading">
+            <span>LIVE BENCHMARK / {activeBenchmark.run_id}</span>
+            <strong>{activeBenchmark.status.toUpperCase()}</strong>
+          </div>
+          <div className="benchmark-child-runs">
+            <button
+              type="button"
+              disabled={!activeBenchmark.control_run_id}
+              onClick={() =>
+                activeBenchmark.control_run_id &&
+                onOpenChild(activeBenchmark.control_run_id)
+              }
+            >
+              <span>WITHOUT SKILL</span>
+              <strong>
+                {activeBenchmark.control
+                  ? plainPercent(
+                      activeBenchmark.control.verifier.passRate,
+                    )
+                  : "RUNNING"}
+              </strong>
+              <small>
+                {activeBenchmark.control_run_id ?? "waiting for child Run"}
+              </small>
+            </button>
+            <i>VS</i>
+            <button
+              type="button"
+              disabled={!activeBenchmark.treatment_run_id}
+              onClick={() =>
+                activeBenchmark.treatment_run_id &&
+                onOpenChild(activeBenchmark.treatment_run_id)
+              }
+            >
+              <span>WITH SKILL</span>
+              <strong>
+                {activeBenchmark.treatment
+                  ? plainPercent(
+                      activeBenchmark.treatment.verifier.passRate,
+                    )
+                  : "WAITING"}
+              </strong>
+              <small>
+                {activeBenchmark.treatment_run_id ?? "waiting for child Run"}
+              </small>
+            </button>
+          </div>
+          <footer>
+            {activeBenchmark.events.at(-1)?.message ??
+              "Benchmark state initialized."}
+          </footer>
+        </article>
+      )}
 
       {activeRun && (
         <div className="benchmark-run-link panel">
@@ -432,8 +630,11 @@ function BenchmarkDashboard({
       <div className="benchmark-notice">
         <strong>范围说明</strong>
         <span>
-          当前成绩来自真实 Codex SDK 的只读知识/计划 probe，并由 pytest
-          验证关键约束；它不等同于固定仓库中的代码修复通过率。
+          {activeBenchmark?.report
+            ? `当前成绩来自 ${activeBenchmark.executor} 动态配对运行。`
+            : activeBenchmark
+              ? "动态评测运行中；完成后会自动替换下方历史成绩。"
+              : "当前展示最近一次持久化成绩；可从上方启动新的配对运行。"}
         </span>
       </div>
 
@@ -616,6 +817,8 @@ export default function DemoApp() {
     runs,
     registryStatus,
     selectRun,
+    benchmarkSnapshot,
+    setBenchmarkSnapshot,
   } = useRunStore();
   const [view, setView] = useState<View>("overview");
   const [selectedCaseId, setSelectedCaseId] = useState(demoCases[0].id);
@@ -683,9 +886,19 @@ export default function DemoApp() {
     setView("orchestrator");
   };
 
-  const openRun = async (runId: string) => {
-    await selectRun(runId);
+  const openRun = async (run: RunSummary) => {
+    await selectRun(run.run_id, run.run_kind);
+    setView(run.run_kind === "benchmark" ? "benchmark" : "overview");
+  };
+
+  const openChildRun = async (runId: string) => {
+    await selectRun(runId, "agent");
     setView("overview");
+  };
+
+  const openParentBenchmark = async (runId: string) => {
+    await selectRun(runId, "benchmark");
+    setView("benchmark");
   };
 
   const selectCase = (caseId: string) => {
@@ -810,11 +1023,16 @@ export default function DemoApp() {
                   type="button"
                   key={run.run_id}
                   className={
-                    snapshot?.run_id === run.run_id ? "active" : ""
+                    snapshot?.run_id === run.run_id ||
+                    benchmarkSnapshot?.run_id === run.run_id
+                      ? "active"
+                      : ""
                   }
-                  onClick={() => void openRun(run.run_id)}
+                  onClick={() => void openRun(run)}
                 >
-                  <span>{run.status}</span>
+                  <span>
+                    {run.run_kind} / {run.status}
+                  </span>
                   <strong>{run.skill_id}</strong>
                   <code>{run.run_id}</code>
                   <small>
@@ -857,19 +1075,31 @@ export default function DemoApp() {
                   (snapshot ? "pending" : "sample-fixture")}
               </code>
             </div>
-            {snapshot?.observability?.trace_url ? (
-              <a
-                href={snapshot.observability.trace_url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                OPEN IN LANGSMITH →
-              </a>
-            ) : (
-              <button type="button" onClick={() => setView("orchestrator")}>
-                {snapshot ? "VIEW LIVE LOOP →" : "START AGENT RUN →"}
-              </button>
-            )}
+            <div className="run-provenance-actions">
+              {snapshot?.parent_run_id ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void openParentBenchmark(snapshot.parent_run_id!)
+                  }
+                >
+                  BACK TO BENCHMARK →
+                </button>
+              ) : null}
+              {snapshot?.observability?.trace_url ? (
+                <a
+                  href={snapshot.observability.trace_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  OPEN IN LANGSMITH →
+                </a>
+              ) : (
+                <button type="button" onClick={() => setView("orchestrator")}>
+                  {snapshot ? "VIEW LIVE LOOP →" : "START AGENT RUN →"}
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1086,8 +1316,11 @@ export default function DemoApp() {
 
         {view === "benchmark" && (
           <BenchmarkDashboard
-            report={benchmarkReport}
+            fallbackReport={benchmarkReport}
             activeRun={snapshot}
+            activeBenchmark={benchmarkSnapshot}
+            onBenchmarkState={setBenchmarkSnapshot}
+            onOpenChild={(runId) => void openChildRun(runId)}
           />
         )}
 

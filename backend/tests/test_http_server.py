@@ -91,3 +91,48 @@ def test_dependency_free_server_streams_graph_states(tmp_path: Path) -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_dependency_free_server_streams_dynamic_benchmark(
+    tmp_path: Path,
+) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "langgraph"
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request(
+            "POST",
+            "/benchmarks/stream",
+            json.dumps(
+                {
+                    "executor": "fixture",
+                    "skill_id": "tdd-workflow",
+                }
+            ),
+            {"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        states = [
+            json.loads(line)
+            for line in response.read().decode("utf-8").splitlines()
+            if line
+        ]
+
+        assert response.status == 200
+        assert states[0]["status"] == "pending"
+        assert states[-1]["status"] == "completed"
+        assert states[-1]["report"]["pairs"][0]["comparison"][
+            "outcome"
+        ] == "improved"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

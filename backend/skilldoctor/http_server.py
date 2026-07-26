@@ -10,7 +10,8 @@ from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
-from .models import RunRequest
+from .benchmark import BenchmarkService
+from .models import BenchmarkRequest, RunRequest
 from .service import RunService
 
 
@@ -24,6 +25,7 @@ def _allowed_origins() -> set[str]:
 
 def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
     allowed_origins = _allowed_origins()
+    benchmarks = BenchmarkService(service)
 
     class SkillDoctorHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -49,12 +51,11 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
-        def _request(self) -> RunRequest:
+        def _payload(self) -> dict:
             length = int(self.headers.get("Content-Length", "0"))
             if length <= 0 or length > 1_000_000:
                 raise ValueError("Request body must be between 1 byte and 1 MB.")
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            return RunRequest.model_validate(payload)
+            return json.loads(self.rfile.read(length).decode("utf-8"))
 
         def do_OPTIONS(self) -> None:  # noqa: N802
             self.send_response(HTTPStatus.NO_CONTENT)
@@ -107,6 +108,26 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                 finally:
                     self.close_connection = True
                 return
+            if path == "/benchmarks":
+                self._json(
+                    HTTPStatus.OK,
+                    {"benchmarks": benchmarks.list()},
+                )
+                return
+            if path.startswith("/benchmarks/"):
+                try:
+                    self._json(
+                        HTTPStatus.OK,
+                        benchmarks.get(path.removeprefix("/benchmarks/")),
+                    )
+                except ValueError as error:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                except FileNotFoundError:
+                    self._json(
+                        HTTPStatus.NOT_FOUND,
+                        {"error": "Benchmark not found."},
+                    )
+                return
             if path.startswith("/runs/"):
                 try:
                     self._json(HTTPStatus.OK, service.get(path.removeprefix("/runs/")))
@@ -120,7 +141,12 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
             try:
-                request = self._request()
+                payload = self._payload()
+                request = (
+                    BenchmarkRequest.model_validate(payload)
+                    if path.startswith("/benchmarks")
+                    else RunRequest.model_validate(payload)
+                )
             except (ValueError, json.JSONDecodeError, ValidationError) as error:
                 self._json(
                     HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -128,10 +154,40 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                 )
                 return
 
+            if path == "/benchmarks":
+                assert isinstance(request, BenchmarkRequest)
+                self._json(HTTPStatus.OK, benchmarks.run(request))
+                return
+            if path == "/benchmarks/stream":
+                assert isinstance(request, BenchmarkRequest)
+                self.send_response(HTTPStatus.OK)
+                self._cors()
+                self.send_header(
+                    "Content-Type",
+                    "application/x-ndjson; charset=utf-8",
+                )
+                self.send_header("Cache-Control", "no-cache, no-transform")
+                self.send_header("X-Accel-Buffering", "no")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                try:
+                    for state in benchmarks.stream(request):
+                        line = (
+                            json.dumps(state, ensure_ascii=False) + "\n"
+                        ).encode("utf-8")
+                        self.wfile.write(line)
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    self.close_connection = True
+                return
             if path == "/runs":
+                assert isinstance(request, RunRequest)
                 self._json(HTTPStatus.OK, service.run(request))
                 return
             if path == "/runs/stream":
+                assert isinstance(request, RunRequest)
                 self.send_response(HTTPStatus.OK)
                 self._cors()
                 self.send_header(

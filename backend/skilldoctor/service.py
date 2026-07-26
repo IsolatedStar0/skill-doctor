@@ -83,13 +83,17 @@ class RunService:
     def _initial_state(self, request: RunRequest, run_id: str) -> AgentState:
         task, skill_content = self._resolved_inputs(request)
         return AgentState(
+            run_kind="agent",
             run_id=run_id,
+            parent_run_id=request.parent_run_id,
             task=task,
             skill_id=request.skill_id,
             skill_version=request.skill_version,
             skill_content=skill_content,
             executor=request.executor,
             scenario=request.scenario,
+            condition=request.condition,
+            repair_enabled=request.repair_enabled,
             attempt=0,
             max_attempts=request.max_attempts,
             status="pending",

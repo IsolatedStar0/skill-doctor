@@ -34,11 +34,14 @@ def test_registry_shares_atomic_snapshots_across_instances(
     runs = reader.list()
     assert runs == [
         {
+            "run_kind": "agent",
             "run_id": "lg-registry001",
+            "parent_run_id": None,
             "skill_id": "tdd-workflow",
             "skill_version": "1.0.0",
             "executor": "fixture",
             "scenario": "content-gap",
+            "condition": "standard",
             "attempt": 0,
             "max_attempts": 2,
             "status": "passed",

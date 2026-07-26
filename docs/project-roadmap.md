@@ -140,8 +140,8 @@ Skill Doctor 不只是“失败后自动修改提示词”，而是一套面向 
 
 ### 3.8 当前测试与代码管理
 
-- [√] Node 测试 46 项通过。
-- [√] Python 测试 19 项通过。
+- [√] Node 测试 48 项通过。
+- [√] Python 测试 24 项通过。
 - [√] HTTP SSE 集成测试通过。
 - [√] 跨实例 Registry 测试通过。
 - [√] 生产构建通过。
@@ -163,52 +163,52 @@ Skill Doctor 不只是“失败后自动修改提示词”，而是一套面向 
 
 ### 后端任务
 
-- [ ] 定义 `BenchmarkRequest`、`BenchmarkState` 和 `BenchmarkResult`。
-- [ ] 实现 `BenchmarkService`。
-- [ ] 为一次配对实验生成 Benchmark 父 Run ID。
-- [ ] 生成 without-skill Control 子 Run。
-- [ ] 生成 with-skill Treatment 子 Run。
-- [ ] 父子 Run 记录 `parent_run_id` 和 `condition`。
-- [ ] 保证两组使用相同任务、模型、超时和工作区基线。
-- [ ] 实现 `POST /benchmarks`。
-- [ ] 实现 `GET /benchmarks`。
-- [ ] 实现 `GET /benchmarks/{benchmark_id}`。
-- [ ] 将 Benchmark 状态发布到 Run Registry/SSE。
+- [√] 定义 `BenchmarkRequest`、`BenchmarkState` 和 `BenchmarkResult`。
+- [√] 实现 `BenchmarkService`。
+- [√] 为一次配对实验生成 Benchmark 父 Run ID。
+- [√] 生成 without-skill Control 子 Run。
+- [√] 生成 with-skill Treatment 子 Run。
+- [√] 父子 Run 记录 `parent_run_id` 和 `condition`。
+- [√] 保证两组使用相同任务、模型、超时和工作区基线。
+- [√] 实现 `POST /benchmarks`。
+- [√] 实现 `GET /benchmarks`。
+- [√] 实现 `GET /benchmarks/{benchmark_id}`。
+- [√] 将 Benchmark 状态发布到 Run Registry/SSE。
 - [ ] 保存每组 Codex JSONL、pytest 输出、git diff 和 Evidence Snapshot。
-- [ ] 聚合 pass rate delta。
-- [ ] 聚合 Token overhead。
-- [ ] 聚合 duration delta。
-- [ ] 聚合 regression rate。
+- [√] 聚合 pass rate delta。
+- [√] 聚合 Token overhead。
+- [√] 聚合 duration delta。
+- [√] 聚合 regression rate。
 - [ ] 记录配对实验停止原因和失败分类。
 
 ### 前端任务
 
-- [ ] 增加“启动配对评测”入口。
-- [ ] 增加 Skill、任务、执行器和超时选择。
-- [ ] 实时展示 Control 与 Treatment 的运行状态。
+- [√] 增加“启动配对评测”入口。
+- [√] 增加 Skill、任务、执行器和超时选择。
+- [√] 实时展示 Control 与 Treatment 的运行状态。
 - [ ] 实时展示两组 Trace 和 Token。
-- [ ] 展示 pass rate、Token、耗时和回归率对照。
-- [ ] 支持从 Benchmark 跳转到两个子 Run。
-- [ ] 支持从子 Run 返回 Benchmark 父 Run。
-- [ ] 将 `latest.json` 降级为离线兜底数据。
+- [√] 展示 pass rate、Token、耗时和回归率对照。
+- [√] 支持从 Benchmark 跳转到两个子 Run。
+- [√] 支持从子 Run 返回 Benchmark 父 Run。
+- [√] 将 `latest.json` 降级为离线兜底数据。
 
 ### 测试任务
 
-- [ ] 测试父子 Run 关联关系。
-- [ ] 测试两组实验输入条件一致。
-- [ ] 测试 Token overhead 计算。
-- [ ] 测试回归率计算。
-- [ ] 测试其中一组失败时 Benchmark 仍能安全结束。
-- [ ] 测试 Benchmark SSE 实时更新。
+- [√] 测试父子 Run 关联关系。
+- [√] 测试两组实验输入条件一致。
+- [√] 测试 Token overhead 计算。
+- [√] 测试回归率计算。
+- [√] 测试其中一组失败时 Benchmark 仍能安全结束。
+- [√] 测试 Benchmark SSE 实时更新。
 
 ### 第 1 周验收标准
 
-- [ ] 前端能够一键启动一组真实配对评测。
-- [ ] Control 与 Treatment 都能在 Run Registry 中查看。
-- [ ] 页面实时展示两组运行进度。
-- [ ] 最终输出 pass rate、Token、耗时和回归率。
+- [√] 前端能够一键启动一组真实配对评测。
+- [√] Control 与 Treatment 都能在 Run Registry 中查看。
+- [√] 页面实时展示两组运行进度。
+- [√] 最终输出 pass rate、Token、耗时和回归率。
 - [ ] 所有指标可追溯到对应 Evidence Snapshot 和 LangSmith Trace。
-- [ ] 完整测试、构建和 lint 通过。
+- [√] 完整测试、构建和 lint 通过。
 
 ---
 

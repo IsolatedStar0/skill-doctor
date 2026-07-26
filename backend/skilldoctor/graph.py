@@ -90,6 +90,7 @@ def build_agent_graph(
                 task=state["task"],
                 skill_id=state["skill_id"],
                 skill_content=state["skill_content"],
+                condition=state["condition"],
             )
         finally:
             if callable(callback_setter):
@@ -376,6 +377,8 @@ def build_agent_graph(
         return "attribute"
 
     def route_after_attribution(state: AgentState) -> str:
+        if not state["repair_enabled"]:
+            return "finalize"
         attribution = AttributionResult.model_validate(state["attribution"])
         repairable = attribution.action in {"patch_skill", "patch_loader"}
         confident = attribution.confidence >= 0.8

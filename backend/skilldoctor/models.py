@@ -105,6 +105,13 @@ class RunRequest(BaseModel):
     )
     executor: Literal["fixture", "replay", "codex"] = "fixture"
     scenario: Literal["content-gap", "network-error"] = "content-gap"
+    condition: Literal[
+        "standard",
+        "without_skill",
+        "with_skill",
+    ] = "standard"
+    parent_run_id: str | None = None
+    repair_enabled: bool = True
     max_attempts: int = Field(default=2, ge=1, le=5)
     stream_delay_ms: int = Field(default=180, ge=0, le=2_000)
     codex_timeout_ms: int = Field(default=180_000, ge=10_000, le=600_000)
@@ -118,13 +125,17 @@ class RunRequest(BaseModel):
 
 
 class AgentState(TypedDict):
+    run_kind: str
     run_id: str
+    parent_run_id: str | None
     task: str
     skill_id: str
     skill_version: str
     skill_content: str
     executor: str
     scenario: str
+    condition: str
+    repair_enabled: bool
     attempt: int
     max_attempts: int
     status: str
@@ -137,3 +148,22 @@ class AgentState(TypedDict):
     verification: NotRequired[dict[str, Any]]
     observability: NotRequired[dict[str, Any]]
     events: Annotated[list[dict[str, Any]], add]
+
+
+class BenchmarkRequest(BaseModel):
+    task: str = "Use the target Skill to produce a verified implementation plan."
+    skill_id: str = "tdd-workflow"
+    skill_version: str = "1.0.0"
+    skill_content: str = (
+        "Inspect the task, execute the required procedure, and verify the result."
+    )
+    executor: Literal["fixture", "replay", "codex"] = "fixture"
+    scenario: Literal["content-gap", "network-error"] = "content-gap"
+    codex_timeout_ms: int = Field(default=180_000, ge=10_000, le=600_000)
+    codex_reasoning_effort: Literal[
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+    ] = "medium"

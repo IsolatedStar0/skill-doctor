@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .models import RunRequest
+from .benchmark import BenchmarkService
+from .models import BenchmarkRequest, RunRequest
 from .service import RunService
 
 app = FastAPI(
@@ -16,6 +17,7 @@ app = FastAPI(
     description="LangGraph orchestration for observable Skill repair runs.",
 )
 service = RunService()
+benchmarks = BenchmarkService(service)
 allowed_origins = [
     origin.strip()
     for origin in os.getenv(
@@ -87,3 +89,35 @@ def get_run(run_id: str) -> dict:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail="Run not found.") from error
+
+
+@app.post("/benchmarks")
+def create_benchmark(request: BenchmarkRequest) -> dict:
+    return benchmarks.run(request)
+
+
+@app.post("/benchmarks/stream")
+def stream_benchmark(request: BenchmarkRequest) -> StreamingResponse:
+    def generate():
+        for state in benchmarks.stream(request):
+            yield f"{json.dumps(state, ensure_ascii=False)}\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@app.get("/benchmarks")
+def list_benchmarks() -> dict:
+    return {"benchmarks": benchmarks.list()}
+
+
+@app.get("/benchmarks/{benchmark_id}")
+def get_benchmark(benchmark_id: str) -> dict:
+    try:
+        return benchmarks.get(benchmark_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(
+            status_code=404,
+            detail="Benchmark not found.",
+        ) from error

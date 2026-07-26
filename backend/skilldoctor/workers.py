@@ -19,6 +19,7 @@ class ExecutionWorker(Protocol):
         task: str,
         skill_id: str,
         skill_content: str,
+        condition: str,
     ) -> ExecutionResult: ...
 
 
@@ -36,6 +37,7 @@ class FixtureWorker:
         task: str,
         skill_id: str,
         skill_content: str,
+        condition: str = "standard",
     ) -> ExecutionResult:
         del run_id, task, skill_content
         if self.scenario == "network-error":
@@ -58,10 +60,19 @@ class FixtureWorker:
                 error="network connection reset",
             )
 
-        repaired = attempt > 0
+        paired = condition in {"without_skill", "with_skill"}
+        repaired = (
+            condition == "with_skill"
+            if paired
+            else attempt > 0
+        )
         return ExecutionResult(
             executor="fixture",
-            condition="with_repaired_skill" if repaired else "with_skill",
+            condition=(
+                condition
+                if paired
+                else "with_repaired_skill" if repaired else "with_skill"
+            ),
             passed=repaired,
             pass_rate=1.0 if repaired else 0.5,
             duration_ms=1_180 if repaired else 960,
@@ -113,6 +124,7 @@ class BenchmarkReplayWorker:
         task: str,
         skill_id: str,
         skill_content: str,
+        condition: str = "standard",
     ) -> ExecutionResult:
         del run_id, task, skill_content
         pair = next(
@@ -128,7 +140,15 @@ class BenchmarkReplayWorker:
                 f"Skill {skill_id!r} is not present in {self.report_path}."
             )
 
-        candidate = pair["control"] if attempt == 0 else pair["treatment"]
+        candidate = (
+            pair["control"]
+            if condition == "without_skill"
+            else pair["treatment"]
+            if condition == "with_skill"
+            else pair["control"]
+            if attempt == 0
+            else pair["treatment"]
+        )
         verifier = candidate["verifier"]
         usage = candidate.get("usage") or {}
         assertions = [
@@ -298,6 +318,7 @@ class CodexExecutionWorker:
         task: str,
         skill_id: str,
         skill_content: str,
+        condition: str = "standard",
     ) -> ExecutionResult:
         if not self.node_executable:
             return ExecutionResult(
@@ -326,6 +347,7 @@ class CodexExecutionWorker:
             "task": task,
             "skillId": skill_id,
             "skillContent": skill_content,
+            "condition": condition,
             "projectRoot": str(self.project_root),
             "timeoutMs": self.request.codex_timeout_ms,
             "reasoningEffort": self.request.codex_reasoning_effort,

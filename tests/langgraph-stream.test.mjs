@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   consumeNdjson,
   getAgentRun,
+  getBenchmarkRun,
   listAgentRuns,
   NdjsonParser,
+  streamBenchmarkRun,
   subscribeAgentRuns,
 } from "../lib/langgraph-stream.ts";
 
@@ -120,5 +122,76 @@ test("subscribes to cross-run SSE registry events", () => {
     assert.equal(FakeEventSource.latest.closed, true);
   } finally {
     globalThis.EventSource = OriginalEventSource;
+  }
+});
+
+test("streams dynamic paired benchmark states", async () => {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  const states = [
+    {
+      run_kind: "benchmark",
+      run_id: "bm-stream001",
+      status: "pending",
+      events: [],
+    },
+    {
+      run_kind: "benchmark",
+      run_id: "bm-stream001",
+      status: "completed",
+      events: [{ stage: "benchmark.completed" }],
+    },
+  ];
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "http://api.test/benchmarks/stream");
+    assert.equal(init.method, "POST");
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(`${states.map(JSON.stringify).join("\n")}\n`),
+        );
+        controller.close();
+      },
+    });
+    return new Response(stream, { status: 200 });
+  };
+  const received = [];
+
+  try {
+    await streamBenchmarkRun(
+      {
+        executor: "fixture",
+        scenario: "content-gap",
+        skill_id: "tdd-workflow",
+      },
+      (state) => received.push(state.status),
+      { apiBaseUrl: "http://api.test" },
+    );
+    assert.deepEqual(received, ["pending", "completed"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("loads a persisted benchmark parent Run", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        run_kind: "benchmark",
+        run_id: "bm-saved001",
+        status: "completed",
+      }),
+      { status: 200 },
+    );
+
+  try {
+    const state = await getBenchmarkRun(
+      "bm-saved001",
+      "http://api.test",
+    );
+    assert.equal(state.run_id, "bm-saved001");
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

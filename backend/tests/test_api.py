@@ -35,3 +35,29 @@ def test_health_and_run_api(tmp_path: Path) -> None:
     listed = client.get("/runs")
     assert listed.status_code == 200
     assert listed.json()["runs"][0]["run_id"] == payload["run_id"]
+
+
+def test_dynamic_benchmark_api(tmp_path: Path) -> None:
+    service.report_directory = tmp_path / "langgraph"
+    client = TestClient(app)
+
+    response = client.post(
+        "/benchmarks",
+        json={
+            "skill_id": "tdd-workflow",
+            "executor": "fixture",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "completed"
+    assert payload["report"]["summary"]["averagePassRateDelta"] == 0.5
+
+    stored = client.get(f"/benchmarks/{payload['run_id']}")
+    assert stored.status_code == 200
+    assert stored.json()["control_run_id"] == payload["control_run_id"]
+
+    listed = client.get("/benchmarks")
+    assert listed.status_code == 200
+    assert listed.json()["benchmarks"][0]["run_id"] == payload["run_id"]

@@ -1,3 +1,5 @@
+import type { PairedBenchmarkReport } from "./benchmark-engine.ts";
+
 export type LangGraphTokenUsage = {
   input_tokens: number;
   output_tokens: number;
@@ -35,13 +37,17 @@ export type LangGraphExecution = {
 };
 
 export type LangGraphState = {
+  run_kind?: "agent";
   run_id: string;
+  parent_run_id?: string | null;
   task: string;
   skill_id: string;
   skill_version: string;
   skill_content: string;
   executor: string;
   scenario: string;
+  condition?: "standard" | "without_skill" | "with_skill";
+  repair_enabled?: boolean;
   attempt: number;
   max_attempts: number;
   status: string;
@@ -110,11 +116,14 @@ export type LangGraphRunRequest = {
 };
 
 export type RunSummary = {
+  run_kind: "agent" | "benchmark";
   run_id: string;
+  parent_run_id: string | null;
   skill_id: string;
   skill_version: string;
   executor: string;
   scenario: string;
+  condition: string;
   attempt: number;
   max_attempts: number;
   status: string;
@@ -123,10 +132,42 @@ export type RunSummary = {
   updated_at: string;
 };
 
+export type BenchmarkState = {
+  run_kind: "benchmark";
+  run_id: string;
+  parent_run_id: null;
+  skill_id: string;
+  skill_version: string;
+  executor: "fixture" | "replay" | "codex";
+  scenario: "content-gap" | "network-error";
+  condition: "paired";
+  attempt: 0;
+  max_attempts: 0;
+  status: "pending" | "running" | "completed" | "failed";
+  stop_reason: string;
+  task: string;
+  events: LangGraphEvent[];
+  control_run_id: string | null;
+  treatment_run_id: string | null;
+  control: PairedBenchmarkReport["pairs"][number]["control"] | null;
+  treatment: PairedBenchmarkReport["pairs"][number]["treatment"] | null;
+  report: PairedBenchmarkReport | null;
+  error: string | null;
+};
+
 export type RunRegistryEvent = {
   type: "run.updated";
   updated_at: string;
-  state: LangGraphState;
+  state: LangGraphState | BenchmarkState;
+};
+
+export type BenchmarkRunRequest = {
+  executor: "fixture" | "replay" | "codex";
+  scenario: "content-gap" | "network-error";
+  skill_id: string;
+  task?: string;
+  skill_content?: string;
+  codex_timeout_ms?: number;
 };
 
 function apiBaseUrl(value?: string) {
@@ -154,6 +195,36 @@ export async function getAgentRun(runId: string, value?: string) {
     throw new Error(`Run request failed with ${response.status}.`);
   }
   return (await response.json()) as LangGraphState;
+}
+
+export async function getBenchmarkRun(runId: string, value?: string) {
+  const response = await fetch(
+    `${apiBaseUrl(value)}/benchmarks/${encodeURIComponent(runId)}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Benchmark request failed with ${response.status}.`);
+  }
+  return (await response.json()) as BenchmarkState;
+}
+
+export async function streamBenchmarkRun(
+  request: BenchmarkRunRequest,
+  onState: (state: BenchmarkState) => void,
+  options: {
+    signal?: AbortSignal;
+    apiBaseUrl?: string;
+  } = {},
+) {
+  const response = await fetch(
+    `${apiBaseUrl(options.apiBaseUrl)}/benchmarks/stream`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      signal: options.signal,
+    },
+  );
+  await consumeNdjson<BenchmarkState>(response, onState);
 }
 
 export function subscribeAgentRuns(
