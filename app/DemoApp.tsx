@@ -16,6 +16,7 @@ import {
 } from "../lib/trace-adapter";
 import type { PairedBenchmarkReport } from "../lib/benchmark-engine";
 import benchmarkReportJson from "../public/benchmarks/latest.json";
+import LangGraphDashboard from "./LangGraphDashboard";
 
 type View =
   | "overview"
@@ -23,7 +24,8 @@ type View =
   | "usage"
   | "diagnosis"
   | "patch"
-  | "benchmark";
+  | "benchmark"
+  | "orchestrator";
 
 const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "overview", label: "运行概览", eyebrow: "00" },
@@ -32,6 +34,7 @@ const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "diagnosis", label: "故障归因", eyebrow: "03" },
   { id: "patch", label: "修复验证", eyebrow: "04" },
   { id: "benchmark", label: "配对评测", eyebrow: "05" },
+  { id: "orchestrator", label: "LangGraph Loop", eyebrow: "06" },
 ];
 
 const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
@@ -694,7 +697,7 @@ export default function DemoApp() {
           </div>
         )}
 
-        {view !== "benchmark" && (
+        {view !== "benchmark" && view !== "orchestrator" && (
           <>
             <section
               className="scenario-switcher"
@@ -898,6 +901,8 @@ export default function DemoApp() {
         {view === "benchmark" && (
           <BenchmarkDashboard report={benchmarkReport} />
         )}
+
+        {view === "orchestrator" && <LangGraphDashboard />}
 
         {view === "diagnosis" && (
           <section className="diagnosis-view">

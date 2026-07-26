@@ -107,6 +107,78 @@ npm run bench:skills -- --live
 test，不冒充完整 benchmark 分数；正式评测还需要固定仓库/Docker 环境，并运行
 with-skill / without-skill 配对实验。
 
+## LangGraph Python 编排层
+
+`backend/` 提供真正的 Python Agent control plane。LangGraph 负责显式状态、
+条件路由、修复重试和验证门禁，现有 TypeScript Codex SDK runner 继续负责
+执行和 JSONL 证据采集。
+
+完整状态流：
+
+```text
+prepare -> execute -> collect_evidence
+                     -> attribute -> repair -> execute
+                     -> verify -> promote / reject
+```
+
+安装 Python 依赖：
+
+```bash
+python -m pip install -e "backend[api,dev]"
+```
+
+运行完全离线、确定性可复现的 Content Gap 自修复：
+
+```bash
+npm run agent:demo
+```
+
+把已经完成的真实 Codex SDK TDD 配对报告重放到 LangGraph：
+
+```bash
+npm run agent:replay
+```
+
+启动零额外依赖的本地 control plane：
+
+```bash
+npm run agent:api
+```
+
+API 提供 `POST /runs`、`POST /runs/stream` 和 `GET /runs/{run_id}`。
+每个节点都输出 attempt、stage、状态、token、pass rate 和证据哈希；完成的
+运行保存在 `reports/langgraph/`。平台异常会直接结束并保持
+`NO_SKILL_MUTATION`，只有高置信度的 Skill/loader 归因才能进入修复循环。
+
+页面中的 `LangGraph Loop` 会消费 `/runs/stream` 的 NDJSON 增量响应，
+逐节点更新时间线、Token、归因、Skill diff 和验证门禁。本地默认连接
+`http://localhost:8010`；需要覆盖时设置
+`NEXT_PUBLIC_SKILL_DOCTOR_API_URL`。安装 `backend[api]` 后也可以运行
+`npm run agent:api:fastapi` 使用 FastAPI 入口。
+
+### 真实 CodexExecutionWorker
+
+LangGraph 现在支持 `executor=codex`，不再只能重放历史配对报告。Python
+编排层会调用 `scripts/codex-execution-worker.mjs`，由已安装的
+`@openai/codex-sdk` 在隔离临时 Git 工作区中安装当前候选 Skill，并使用
+`read-only` sandbox、`approvalPolicy=never` 和禁用任务网络的配置执行真实
+Codex thread。每次 attempt 都会保存：
+
+- Codex SDK 原始事件 JSONL 与 thread id
+- 最终回答与 Token usage
+- verifier assertions 与 pass rate
+- Git diff 和带 SHA-256 的 Evidence Snapshot
+
+命令行执行一次真实闭环：
+
+```bash
+npm run agent:codex
+```
+
+也可以在 `LangGraph Loop` 页面选择 `CODEX SDK LIVE`。真实执行使用本机
+Codex 登录态和服务连接；鉴权、网络或超时失败会归类为 `Non-Skill Cause`，
+不会生成 Skill Patch。
+
 ## Codex SDK 配对评测
 
 项目已接入官方 `@openai/codex-sdk`，对同一个任务分别运行：
@@ -179,6 +251,9 @@ npm test
 app/
   DemoApp.tsx        三场景、四视图的交互控制台
   globals.css        响应式界面样式
+backend/
+  skilldoctor/       LangGraph 状态图、worker、CLI、API 与运行存储
+  tests/             修复闭环、平台安全边界和真实 Codex replay 测试
 lib/
   demo-engine.ts     Trace、规则归因、修复隔离和验证引擎
   attribution-engine.ts  有版本和优先级证明的 7 类归因规则

@@ -46,3 +46,10 @@ next-env.d.ts
 /benchmarks/cache/*.jsonl
 /reports/codex-smoke/*.json
 /reports/paired/
+/reports/langgraph/
+__pycache__/
+*.py[cod]
+/.pytest_cache/
+/backend/.pytest_cache/
+/backend/*.egg-info/
+/.pytest-tmp*/
