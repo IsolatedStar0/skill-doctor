@@ -4,12 +4,28 @@ import threading
 import time
 from pathlib import Path
 
-from backend.skilldoctor.http_server import make_handler
+from backend.skilldoctor.http_server import make_handler, parser
 from backend.skilldoctor.service import RunService
 from http.server import ThreadingHTTPServer
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_dependency_free_server_defaults_to_cloud_friendly_host(monkeypatch) -> None:
+    monkeypatch.delenv("SKILL_DOCTOR_HOST", raising=False)
+
+    args = parser().parse_args([])
+
+    assert args.host == "0.0.0.0"
+
+
+def test_dependency_free_server_host_can_be_configured(monkeypatch) -> None:
+    monkeypatch.setenv("SKILL_DOCTOR_HOST", "127.0.0.1")
+
+    args = parser().parse_args([])
+
+    assert args.host == "127.0.0.1"
 
 
 def test_dependency_free_server_streams_graph_states(tmp_path: Path) -> None:

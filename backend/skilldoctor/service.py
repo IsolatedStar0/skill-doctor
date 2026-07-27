@@ -10,7 +10,7 @@ from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from .graph import build_agent_graph
-from .models import AgentState, RunEvent, RunRequest
+from .models import AgentState, RunEvent, RunRequest, TraceIngestRequest
 from .observability import (
     LangSmithRunExporter,
     create_observability_exporter,
@@ -21,6 +21,7 @@ from .workers import (
     CodexExecutionWorker,
     ExecutionWorker,
     FixtureWorker,
+    UploadedTraceWorker,
 )
 
 
@@ -110,10 +111,46 @@ class RunService:
             raise RuntimeError("Agent run completed without a state snapshot.")
         return latest
 
+    def ingest_trace(self, request: TraceIngestRequest) -> dict[str, Any]:
+        latest: dict[str, Any] | None = None
+        for latest in self.stream_ingested_trace(request):
+            pass
+        if latest is None:
+            raise RuntimeError("Trace ingest completed without a state snapshot.")
+        return latest
+
+    def stream_ingested_trace(
+        self,
+        request: TraceIngestRequest,
+    ) -> Iterator[dict[str, Any]]:
+        run_request = RunRequest(
+            task=request.task,
+            skill_id=request.skill_id,
+            skill_version=request.skill_version,
+            skill_content=request.skill_content,
+            executor="trace-ingest",
+            scenario="content-gap",
+            condition=request.condition,
+            parent_run_id=request.parent_run_id,
+            repair_enabled=request.repair_enabled,
+            max_attempts=request.max_attempts,
+            stream_delay_ms=0,
+        )
+        yield from self._stream_with_worker(
+            run_request,
+            UploadedTraceWorker(request.execution),
+        )
+
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:
+        yield from self._stream_with_worker(request, self._worker(request))
+
+    def _stream_with_worker(
+        self,
+        request: RunRequest,
+        worker: ExecutionWorker,
+    ) -> Iterator[dict[str, Any]]:
         run_id = f"lg-{uuid4().hex[:12]}"
         exporter = self.exporter_factory(run_id, request)
-        worker = self._worker(request)
         updates: queue.Queue[tuple[str, Any]] = queue.Queue()
         latest: dict[str, Any] | None = None
         pending_runtime_events: list[dict[str, Any]] = []

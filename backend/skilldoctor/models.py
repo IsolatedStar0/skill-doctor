@@ -104,7 +104,7 @@ class RunRequest(BaseModel):
     skill_content: str = (
         "Inspect the task, execute the required procedure, and verify the result."
     )
-    executor: Literal["fixture", "replay", "codex"] = "fixture"
+    executor: Literal["fixture", "replay", "codex", "trace-ingest"] = "fixture"
     scenario: Literal["content-gap", "network-error"] = "content-gap"
     condition: Literal[
         "standard",
@@ -123,6 +123,24 @@ class RunRequest(BaseModel):
         "high",
         "xhigh",
     ] = "medium"
+
+
+class TraceIngestRequest(BaseModel):
+    """Normalized trace payload pushed by an external Aime execution."""
+
+    task: str = "Imported Aime Skill execution trace."
+    skill_id: str
+    skill_version: str = "unknown"
+    skill_content: str = ""
+    condition: Literal[
+        "standard",
+        "without_skill",
+        "with_skill",
+    ] = "standard"
+    parent_run_id: str | None = None
+    repair_enabled: bool = True
+    max_attempts: int = Field(default=1, ge=1, le=5)
+    execution: ExecutionResult
 
 
 class AgentState(TypedDict):

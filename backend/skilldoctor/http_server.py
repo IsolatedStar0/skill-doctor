@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Type
@@ -11,16 +12,17 @@ from urllib.parse import urlparse
 from pydantic import ValidationError
 
 from .benchmark import BenchmarkService
-from .models import BenchmarkRequest, RunRequest
+from .models import BenchmarkRequest, RunRequest, TraceIngestRequest
 from .service import RunService
 
 
 def _allowed_origins() -> set[str]:
-    value = os.getenv(
-        "SKILL_DOCTOR_CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:3001",
-    )
+    value = os.getenv("SKILL_DOCTOR_CORS_ORIGINS", "*")
     return {origin.strip() for origin in value.split(",") if origin.strip()}
+
+
+def _default_host() -> str:
+    return os.getenv("SKILL_DOCTOR_HOST", "0.0.0.0")
 
 
 def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
@@ -33,14 +35,19 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
 
         def _cors(self) -> None:
             origin = self.headers.get("Origin")
-            if origin in allowed_origins:
+            if "*" in allowed_origins:
+                self.send_header("Access-Control-Allow-Origin", "*")
+            elif origin in allowed_origins:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
             self.send_header(
                 "Access-Control-Allow-Methods",
                 "GET, POST, OPTIONS",
             )
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, Authorization, X-API-Key",
+            )
 
         def _json(self, status: int, payload: dict) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -56,6 +63,31 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             if length <= 0 or length > 1_000_000:
                 raise ValueError("Request body must be between 1 byte and 1 MB.")
             return json.loads(self.rfile.read(length).decode("utf-8"))
+
+        def _require_ingest_auth(self) -> bool:
+            expected = os.getenv("SKILL_DOCTOR_INGEST_API_KEY")
+            if not expected:
+                self._json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {
+                        "error": (
+                            "Trace ingest is disabled; "
+                            "set SKILL_DOCTOR_INGEST_API_KEY."
+                        )
+                    },
+                )
+                return False
+            candidates: list[str] = []
+            authorization = self.headers.get("Authorization", "")
+            if authorization.startswith("Bearer "):
+                candidates.append(authorization.removeprefix("Bearer ").strip())
+            api_key = self.headers.get("X-API-Key")
+            if api_key:
+                candidates.append(api_key.strip())
+            if any(secrets.compare_digest(candidate, expected) for candidate in candidates):
+                return True
+            self._json(HTTPStatus.UNAUTHORIZED, {"error": "Invalid trace ingest token."})
+            return False
 
         def do_OPTIONS(self) -> None:  # noqa: N802
             self.send_response(HTTPStatus.NO_CONTENT)
@@ -142,11 +174,12 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             path = urlparse(self.path).path
             try:
                 payload = self._payload()
-                request = (
-                    BenchmarkRequest.model_validate(payload)
-                    if path.startswith("/benchmarks")
-                    else RunRequest.model_validate(payload)
-                )
+                if path in {"/traces", "/runs/upload"}:
+                    request = TraceIngestRequest.model_validate(payload)
+                elif path.startswith("/benchmarks"):
+                    request = BenchmarkRequest.model_validate(payload)
+                else:
+                    request = RunRequest.model_validate(payload)
             except (ValueError, json.JSONDecodeError, ValidationError) as error:
                 self._json(
                     HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -154,6 +187,12 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                 )
                 return
 
+            if path in {"/traces", "/runs/upload"}:
+                assert isinstance(request, TraceIngestRequest)
+                if not self._require_ingest_auth():
+                    return
+                self._json(HTTPStatus.OK, service.ingest_trace(request))
+                return
             if path == "/benchmarks":
                 assert isinstance(request, BenchmarkRequest)
                 self._json(HTTPStatus.OK, benchmarks.run(request))
@@ -222,7 +261,7 @@ def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(
         description="Run the dependency-free Skill Doctor HTTP control plane."
     )
-    command.add_argument("--host", default="127.0.0.1")
+    command.add_argument("--host", default=_default_host())
     command.add_argument("--port", default=8010, type=int)
     return command
 

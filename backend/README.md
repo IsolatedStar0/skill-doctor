@@ -54,13 +54,13 @@ state snapshots before the `execute` node completes.
 Start the dependency-free local API:
 
 ```bash
-node scripts/python.mjs -m backend.skilldoctor.http_server --host 127.0.0.1 --port 8010
+node scripts/python.mjs -m backend.skilldoctor.http_server --port 8010
 ```
 
 The optional FastAPI entry point exposes the same contract:
 
 ```bash
-node scripts/python.mjs -m uvicorn backend.skilldoctor.api:app --host 127.0.0.1 --port 8010
+node scripts/python.mjs -m uvicorn backend.skilldoctor.api:app --host 0.0.0.0 --port 8010
 ```
 
 Endpoints:
@@ -68,7 +68,11 @@ Endpoints:
 - `GET /health`
 - `POST /runs`
 - `POST /runs/stream` (newline-delimited JSON state snapshots)
+- `POST /traces` (authenticated normalized trace ingest)
+- `POST /runs/upload` (alias for `/traces`)
 - `GET /runs/{run_id}`
+
+Set `SKILL_DOCTOR_INGEST_API_KEY` before enabling trace ingest. Clients must send either `Authorization: Bearer <token>` or `X-API-Key: <token>`; if the env var is missing, ingest returns `503` instead of accepting unauthenticated writes.
 
 Completed runs are stored under `reports/langgraph/`.
 

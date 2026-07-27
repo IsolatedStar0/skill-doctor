@@ -134,6 +134,26 @@ class FixtureWorker:
         )
 
 
+class UploadedTraceWorker:
+    """Feeds an externally uploaded trace into the attribution graph."""
+
+    def __init__(self, result: ExecutionResult) -> None:
+        self.result = result
+
+    def run(
+        self,
+        *,
+        run_id: str,
+        attempt: int,
+        task: str,
+        skill_id: str,
+        skill_content: str,
+        condition: str = "standard",
+    ) -> ExecutionResult:
+        del run_id, attempt, task, skill_id, skill_content, condition
+        return self.result
+
+
 class BenchmarkReplayWorker:
     """Replays the repository's real Codex paired benchmark as graph input."""
 

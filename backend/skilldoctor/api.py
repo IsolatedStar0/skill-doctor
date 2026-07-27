@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 
-from fastapi import FastAPI, HTTPException
+import secrets
+
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .benchmark import BenchmarkService
-from .models import BenchmarkRequest, RunRequest
+from .models import BenchmarkRequest, RunRequest, TraceIngestRequest
 from .service import RunService
 
 app = FastAPI(
@@ -20,18 +22,34 @@ service = RunService()
 benchmarks = BenchmarkService(service)
 allowed_origins = [
     origin.strip()
-    for origin in os.getenv(
-        "SKILL_DOCTOR_CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:3001",
-    ).split(",")
+    for origin in os.getenv("SKILL_DOCTOR_CORS_ORIGINS", "*").split(",")
     if origin.strip()
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+
+def require_ingest_auth(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+) -> None:
+    expected = os.getenv("SKILL_DOCTOR_INGEST_API_KEY")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Trace ingest is disabled; set SKILL_DOCTOR_INGEST_API_KEY.",
+        )
+    candidates: list[str] = []
+    if authorization and authorization.startswith("Bearer "):
+        candidates.append(authorization.removeprefix("Bearer ").strip())
+    if x_api_key:
+        candidates.append(x_api_key.strip())
+    if not any(secrets.compare_digest(candidate, expected) for candidate in candidates):
+        raise HTTPException(status_code=401, detail="Invalid trace ingest token.")
 
 
 @app.get("/health")
@@ -57,6 +75,19 @@ def stream_run(request: RunRequest) -> StreamingResponse:
             yield json.dumps({"error": str(error)}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@app.post("/traces", dependencies=[Depends(require_ingest_auth)])
+def ingest_trace(request: TraceIngestRequest) -> dict:
+    try:
+        return service.ingest_trace(request)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/runs/upload", dependencies=[Depends(require_ingest_auth)])
+def upload_run_trace(request: TraceIngestRequest) -> dict:
+    return ingest_trace(request)
 
 
 @app.get("/runs")
