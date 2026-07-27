@@ -115,6 +115,144 @@ def test_trace_ingest_runs_attribution_pipeline(
         assert state["attribution"]["cause"] == "skill"
         assert state["status"] == "failed"
         assert service.get(state["run_id"])["run_id"] == state["run_id"]
+        stages = [event["stage"] for event in state["events"]]
+        assert "agent.analyze" in stages
+        assert "agent.analyze.summarize" in stages
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _raw_puck_trace_payload() -> str:
+    """A raw puck-rule-rca style trace with no normalized execution."""
+
+    return json.dumps(
+        {
+            "task": "Diagnose puck-rule-rca uploaded trace.",
+            "skill_id": "puck-rule-rca",
+            "skill_version": "1.0.0",
+            "skill_content": "Follow the noise-judge procedure.",
+            "repair_enabled": False,
+            "runtime_events": [
+                {
+                    "stage": "puck.fetch_metric_info",
+                    "status": "completed",
+                    "message": "Loaded metric detail for indicator 1128.",
+                    "metadata": {"indicator": 1128},
+                },
+                {
+                    "stage": "puck.timeseries_query",
+                    "status": "completed",
+                    "message": "Retrieved three-window timeseries.",
+                    "metadata": {"windows": ["today", "day-1", "day-2"]},
+                },
+                {
+                    "stage": "puck.noise_judge",
+                    "status": "completed",
+                    "message": "rca_filter=true confidence=0.64.",
+                    "metadata": {"rca_filter": True, "confidence": 0.64},
+                },
+            ],
+            "tool_calls": [
+                {
+                    "name": "fetch_rule_metric_info",
+                    "status": "completed",
+                    "output": "ok",
+                }
+            ],
+            "model_messages": [
+                {"role": "assistant", "content": "Analysis complete."}
+            ],
+            "trace_metadata": {
+                "puck_task_id": 185179,
+                "dispatch_id": 12992029,
+                "indicator": 1128,
+                "rca_filter": True,
+                "confidence": 0.64,
+            },
+        }
+    )
+
+
+def test_trace_ingest_accepts_raw_puck_rule_rca_trace(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SKILL_DOCTOR_INGEST_API_KEY", "secret-token")
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request(
+            "POST",
+            "/traces",
+            _raw_puck_trace_payload(),
+            {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+            },
+        )
+        response = connection.getresponse()
+        state = json.loads(response.read().decode("utf-8"))
+
+        assert response.status == 200, state
+        assert state["executor"] == "trace-ingest"
+        assert state["execution"]["executor"] == "aime-skill-trace"
+        # Confidence 0.64 < 0.75 → skill assertion fails → overall passed=False
+        assert state["execution"]["passed"] is False
+        stages = [event["stage"] for event in state["events"]]
+        assert "agent.analyze" in stages
+        assert "agent.analyze.runtime_events" in stages
+        assert "agent.analyze.summarize" in stages
+        # Attribution should hold a skill-owned cause.
+        assert state["attribution"]["cause"] in {"skill", "loader"}
+        # The original puck runtime events must have been preserved.
+        recorded_stages = {event["stage"] for event in state["events"]}
+        assert "puck.noise_judge" in recorded_stages
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_trace_ingest_rejects_empty_payload(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SKILL_DOCTOR_INGEST_API_KEY", "secret-token")
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request(
+            "POST",
+            "/traces",
+            json.dumps({"skill_id": "puck-rule-rca"}),
+            {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer secret-token",
+            },
+        )
+        response = connection.getresponse()
+
+        assert response.status == 422
     finally:
         server.shutdown()
         server.server_close()

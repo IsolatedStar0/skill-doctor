@@ -4,10 +4,17 @@ import json
 import shutil
 import subprocess
 import threading
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .models import AssertionResult, ExecutionResult, RunRequest, TokenUsage
+from .models import (
+    AssertionResult,
+    ExecutionResult,
+    RunRequest,
+    TokenUsage,
+    TraceIngestRequest,
+)
 
 
 class ExecutionWorker(Protocol):
@@ -135,10 +142,303 @@ class FixtureWorker:
 
 
 class UploadedTraceWorker:
-    """Feeds an externally uploaded trace into the attribution graph."""
+    """Analyze an externally uploaded trace and feed the graph.
 
-    def __init__(self, result: ExecutionResult) -> None:
-        self.result = result
+    The worker replaces the previous "pass-through" behaviour: instead of
+    returning the pre-computed :class:`ExecutionResult` verbatim, it runs a
+    lightweight but real analysis pass over the raw trace signal (runtime
+    events, tool calls, model messages, trace metadata) and returns an
+    enriched :class:`ExecutionResult` that downstream LangGraph nodes
+    (attribute / collect_evidence / finalize) can act on.
+
+    Analysis steps are surfaced as ``runtime_events`` so that they appear
+    as discrete agent steps in the ``execute`` node of the graph and, by
+    extension, in ``GET /runs/{run_id}``.
+    """
+
+    _ERROR_KEYWORDS = (
+        "error",
+        "failed",
+        "exception",
+        "timeout",
+        "denied",
+        "not found",
+        "traceback",
+    )
+
+    def __init__(self, request: TraceIngestRequest) -> None:
+        self.request = request
+        self._event_callback: Callable[[dict[str, Any]], None] | None = None
+
+    # ------------------------------------------------------------------ hooks
+    def set_event_callback(
+        self,
+        callback: Callable[[dict[str, Any]], None] | None,
+    ) -> None:
+        self._event_callback = callback
+
+    def _emit(
+        self,
+        stage: str,
+        message: str,
+        *,
+        status: str = "completed",
+        metadata: dict[str, Any] | None = None,
+        usage: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        event: dict[str, Any] = {
+            "stage": stage,
+            "status": status,
+            "message": message,
+            "usage": usage,
+            "metadata": metadata or {},
+        }
+        if self._event_callback is not None:
+            # deepcopy so the caller cannot mutate our internal buffer
+            self._event_callback(deepcopy(event))
+        return event
+
+    # -------------------------------------------------------------- analysis
+    @staticmethod
+    def _stringify(value: Any, limit: int = 400) -> str:
+        if isinstance(value, str):
+            text = value.strip()
+        else:
+            try:
+                text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            except (TypeError, ValueError):
+                text = str(value)
+        text = text.strip()
+        return text if len(text) <= limit else f"{text[: limit - 1]}…"
+
+    def _looks_like_error(self, blob: Any) -> bool:
+        text = self._stringify(blob, limit=4000).lower()
+        return any(keyword in text for keyword in self._ERROR_KEYWORDS)
+
+    def _analyze_runtime_events(
+        self,
+        events: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[AssertionResult], list[str]]:
+        normalized: list[dict[str, Any]] = []
+        assertions: list[AssertionResult] = []
+        findings: list[str] = []
+        failed_stages: list[str] = []
+
+        for index, raw in enumerate(events, start=1):
+            if not isinstance(raw, dict):
+                continue
+            stage = str(raw.get("stage") or f"trace.event.{index}")
+            status_value = str(raw.get("status") or "completed").lower()
+            if status_value not in {"started", "completed", "failed", "skipped"}:
+                status_value = (
+                    "failed" if self._looks_like_error(raw) else "completed"
+                )
+            message = self._stringify(
+                raw.get("message") or raw.get("summary") or stage
+            )
+            metadata = raw.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            normalized.append(
+                {
+                    "stage": stage,
+                    "status": status_value,
+                    "message": message,
+                    "usage": raw.get("usage"),
+                    "metadata": metadata,
+                }
+            )
+            if status_value == "failed":
+                failed_stages.append(stage)
+
+        if failed_stages:
+            summary = ", ".join(failed_stages[:5])
+            assertions.append(
+                AssertionResult(
+                    id="runtime-events-clean",
+                    source="system",
+                    passed=False,
+                    detail=(
+                        f"{len(failed_stages)} runtime event(s) reported failure "
+                        f"({summary})."
+                    ),
+                )
+            )
+            findings.append(
+                f"{len(failed_stages)} failed runtime event(s) detected."
+            )
+        elif events:
+            assertions.append(
+                AssertionResult(
+                    id="runtime-events-clean",
+                    source="system",
+                    passed=True,
+                    detail=f"All {len(normalized)} runtime events completed.",
+                )
+            )
+
+        return normalized, assertions, findings
+
+    def _analyze_tool_calls(
+        self,
+        tool_calls: list[dict[str, Any]],
+    ) -> tuple[list[AssertionResult], list[str], dict[str, int]]:
+        assertions: list[AssertionResult] = []
+        findings: list[str] = []
+        counts: dict[str, int] = {"total": 0, "failed": 0}
+        failing_tools: list[str] = []
+        for raw in tool_calls:
+            if not isinstance(raw, dict):
+                continue
+            counts["total"] += 1
+            name = str(
+                raw.get("name") or raw.get("tool") or raw.get("id") or "unknown"
+            )
+            status_value = str(raw.get("status") or "").lower()
+            error_field = raw.get("error")
+            failed = (
+                status_value in {"failed", "error"}
+                or bool(error_field)
+                or self._looks_like_error(raw.get("output") or raw.get("result"))
+            )
+            if failed:
+                counts["failed"] += 1
+                failing_tools.append(name)
+        if counts["total"] > 0:
+            passed = counts["failed"] == 0
+            detail = (
+                f"All {counts['total']} tool call(s) succeeded."
+                if passed
+                else (
+                    f"{counts['failed']}/{counts['total']} tool call(s) failed"
+                    + (
+                        f" ({', '.join(failing_tools[:5])})"
+                        if failing_tools
+                        else ""
+                    )
+                    + "."
+                )
+            )
+            assertions.append(
+                AssertionResult(
+                    id="tool-calls-healthy",
+                    source="system",
+                    passed=passed,
+                    detail=detail,
+                )
+            )
+            if not passed:
+                findings.append(detail)
+        return assertions, findings, counts
+
+    def _analyze_model_messages(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> tuple[list[AssertionResult], list[str], dict[str, int]]:
+        assertions: list[AssertionResult] = []
+        findings: list[str] = []
+        counts: dict[str, int] = {"total": 0, "assistant": 0, "tool": 0}
+        error_hits = 0
+        for raw in messages:
+            if not isinstance(raw, dict):
+                continue
+            counts["total"] += 1
+            role = str(raw.get("role") or "").lower()
+            if role in counts:
+                counts[role] += 1
+            if self._looks_like_error(raw.get("content") or raw.get("text")):
+                error_hits += 1
+        if counts["total"] > 0:
+            passed = error_hits == 0
+            detail = (
+                f"Reviewed {counts['total']} model message(s); "
+                f"assistant={counts['assistant']}, tool={counts['tool']}."
+                if passed
+                else (
+                    f"Detected {error_hits} error-shaped model message(s) "
+                    f"across {counts['total']} total."
+                )
+            )
+            assertions.append(
+                AssertionResult(
+                    id="model-dialog-clean",
+                    source="skill",
+                    passed=passed,
+                    detail=detail,
+                )
+            )
+            if not passed:
+                findings.append(detail)
+        return assertions, findings, counts
+
+    def _analyze_metadata(
+        self,
+        metadata: dict[str, Any],
+    ) -> tuple[list[AssertionResult], list[str]]:
+        assertions: list[AssertionResult] = []
+        findings: list[str] = []
+        if not metadata:
+            return assertions, findings
+
+        confidence = metadata.get("confidence")
+        if isinstance(confidence, (int, float)):
+            threshold = 0.75
+            passed = confidence >= threshold
+            assertions.append(
+                AssertionResult(
+                    id="skill-confidence",
+                    source="skill",
+                    passed=passed,
+                    detail=(
+                        f"Reported confidence {confidence:.2f} "
+                        f"{'meets' if passed else 'below'} threshold {threshold}."
+                    ),
+                )
+            )
+            if not passed:
+                findings.append(
+                    f"Confidence {confidence:.2f} below {threshold} threshold."
+                )
+        rca_filter = metadata.get("rca_filter")
+        if rca_filter is False:
+            assertions.append(
+                AssertionResult(
+                    id="rca-filter-decision",
+                    source="skill",
+                    passed=False,
+                    detail="Skill decided rca_filter=false (issue not filtered).",
+                )
+            )
+            findings.append(
+                "Skill decided rca_filter=false — anomaly retained."
+            )
+        return assertions, findings
+
+    # ------------------------------------------------------------------ run
+    def _collect_raw_channels(
+        self,
+        prior_execution: ExecutionResult | None,
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        dict[str, Any],
+    ]:
+        runtime_events = list(self.request.runtime_events)
+        if prior_execution and prior_execution.runtime_events:
+            # merge without duplicating identical entries
+            seen = {json.dumps(item, sort_keys=True) for item in runtime_events}
+            for item in prior_execution.runtime_events:
+                key = json.dumps(item, sort_keys=True)
+                if key not in seen:
+                    runtime_events.append(item)
+                    seen.add(key)
+        return (
+            runtime_events,
+            list(self.request.tool_calls),
+            list(self.request.model_messages),
+            dict(self.request.trace_metadata),
+        )
 
     def run(
         self,
@@ -150,8 +450,210 @@ class UploadedTraceWorker:
         skill_content: str,
         condition: str = "standard",
     ) -> ExecutionResult:
-        del run_id, attempt, task, skill_id, skill_content, condition
-        return self.result
+        del run_id, attempt, task, skill_content
+        prior = self.request.execution
+
+        runtime_events, tool_calls, model_messages, metadata = (
+            self._collect_raw_channels(prior)
+        )
+
+        analysis_events: list[dict[str, Any]] = []
+        analysis_events.append(
+            self._emit(
+                "agent.analyze",
+                (
+                    "Uploaded trace received: "
+                    f"runtime_events={len(runtime_events)}, "
+                    f"tool_calls={len(tool_calls)}, "
+                    f"model_messages={len(model_messages)}, "
+                    f"trace_metadata_keys={len(metadata)}."
+                ),
+                status="started",
+                metadata={
+                    "skill_id": skill_id,
+                    "condition": condition,
+                    "has_prior_execution": prior is not None,
+                    "trace_metadata_keys": sorted(metadata.keys()),
+                },
+            )
+        )
+
+        normalized_events, event_assertions, event_findings = (
+            self._analyze_runtime_events(runtime_events)
+        )
+        analysis_events.append(
+            self._emit(
+                "agent.analyze.runtime_events",
+                (
+                    f"Inspected {len(normalized_events)} runtime event(s); "
+                    f"failures={sum(1 for e in normalized_events if e['status'] == 'failed')}."
+                ),
+                metadata={
+                    "count": len(normalized_events),
+                    "failed": sum(
+                        1 for e in normalized_events if e["status"] == "failed"
+                    ),
+                },
+            )
+        )
+
+        tool_assertions, tool_findings, tool_counts = self._analyze_tool_calls(
+            tool_calls
+        )
+        if tool_counts["total"]:
+            analysis_events.append(
+                self._emit(
+                    "agent.analyze.tool_calls",
+                    (
+                        f"Reviewed {tool_counts['total']} tool call(s); "
+                        f"failed={tool_counts['failed']}."
+                    ),
+                    metadata=tool_counts,
+                )
+            )
+
+        (
+            message_assertions,
+            message_findings,
+            message_counts,
+        ) = self._analyze_model_messages(model_messages)
+        if message_counts["total"]:
+            analysis_events.append(
+                self._emit(
+                    "agent.analyze.model_messages",
+                    (
+                        f"Reviewed {message_counts['total']} model message(s) "
+                        f"(assistant={message_counts['assistant']}, "
+                        f"tool={message_counts['tool']})."
+                    ),
+                    metadata=message_counts,
+                )
+            )
+
+        metadata_assertions, metadata_findings = self._analyze_metadata(metadata)
+        if metadata:
+            analysis_events.append(
+                self._emit(
+                    "agent.analyze.metadata",
+                    f"Read {len(metadata)} trace metadata field(s).",
+                    metadata={"keys": sorted(metadata.keys())},
+                )
+            )
+
+        # ------- merge prior + derived assertions
+        merged_assertions: list[AssertionResult] = []
+        if prior is not None:
+            merged_assertions.extend(prior.assertions)
+        merged_assertions.extend(event_assertions)
+        merged_assertions.extend(tool_assertions)
+        merged_assertions.extend(message_assertions)
+        merged_assertions.extend(metadata_assertions)
+
+        all_findings = (
+            event_findings
+            + tool_findings
+            + message_findings
+            + metadata_findings
+        )
+        derived_passed = all(item.passed for item in merged_assertions)
+        derived_pass_rate = (
+            sum(1 for item in merged_assertions if item.passed)
+            / len(merged_assertions)
+            if merged_assertions
+            else 1.0
+        )
+
+        # ------- reconcile with any prior execution result
+        if prior is not None:
+            passed = prior.passed and derived_passed
+            pass_rate = min(prior.pass_rate, derived_pass_rate)
+            executor = prior.executor or "aime-skill-trace"
+            resolved_condition = prior.condition or condition
+            task_kind = prior.task_kind
+            duration_ms = prior.duration_ms
+            usage = prior.usage
+            artifacts = dict(prior.artifacts)
+            error = prior.error
+        else:
+            passed = derived_passed
+            pass_rate = derived_pass_rate
+            executor = "aime-skill-trace"
+            resolved_condition = condition or "standard"
+            task_kind = "knowledge-probe"
+            duration_ms = 0
+            usage = TokenUsage()
+            artifacts = {}
+            error = None
+            if not runtime_events and not tool_calls and not model_messages:
+                error = "Empty trace payload."
+
+        # error-flag any strong error signals
+        if not passed and error is None and all_findings:
+            error = all_findings[0]
+
+        summary_bits: list[str] = []
+        if prior is not None and prior.summary:
+            summary_bits.append(prior.summary)
+        if all_findings:
+            summary_bits.append(
+                f"Agent findings: {'; '.join(all_findings[:3])}."
+            )
+        else:
+            summary_bits.append(
+                f"Agent analysis found no issues across "
+                f"{len(normalized_events)} runtime event(s), "
+                f"{tool_counts['total']} tool call(s) and "
+                f"{message_counts['total']} model message(s)."
+            )
+        summary = " ".join(summary_bits).strip()
+
+        analysis_events.append(
+            self._emit(
+                "agent.analyze.summarize",
+                summary,
+                status="completed" if passed else "failed",
+                metadata={
+                    "passed": passed,
+                    "pass_rate": round(pass_rate, 4),
+                    "assertion_count": len(merged_assertions),
+                    "findings": all_findings[:5],
+                },
+            )
+        )
+        analysis_events.append(
+            self._emit(
+                "agent.analyze",
+                "Uploaded trace analysis complete.",
+                status="completed" if passed else "failed",
+                metadata={
+                    "passed": passed,
+                    "pass_rate": round(pass_rate, 4),
+                    "findings_count": len(all_findings),
+                },
+            )
+        )
+
+        # combine analysis-emitted events with original trace runtime events so
+        # the execute node stores the full agent-step timeline.
+        combined_runtime_events: list[dict[str, Any]] = []
+        combined_runtime_events.extend(normalized_events)
+        combined_runtime_events.extend(analysis_events)
+
+        return ExecutionResult(
+            executor=executor,
+            condition=resolved_condition,
+            task_kind=task_kind,
+            passed=passed,
+            pass_rate=pass_rate,
+            duration_ms=duration_ms,
+            usage=usage,
+            assertions=merged_assertions,
+            regression_rate=(prior.regression_rate if prior else 0),
+            summary=summary,
+            artifacts=artifacts,
+            runtime_events=combined_runtime_events,
+            error=error,
+        )
 
 
 class BenchmarkReplayWorker:

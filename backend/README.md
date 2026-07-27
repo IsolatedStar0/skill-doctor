@@ -68,11 +68,33 @@ Endpoints:
 - `GET /health`
 - `POST /runs`
 - `POST /runs/stream` (newline-delimited JSON state snapshots)
-- `POST /traces` (authenticated normalized trace ingest)
+- `POST /traces` (authenticated normalized **or raw** trace ingest)
 - `POST /runs/upload` (alias for `/traces`)
 - `GET /runs/{run_id}`
 
 Set `SKILL_DOCTOR_INGEST_API_KEY` before enabling trace ingest. Clients must send either `Authorization: Bearer <token>` or `X-API-Key: <token>`; if the env var is missing, ingest returns `503` instead of accepting unauthenticated writes.
+
+`POST /traces` accepts two payload shapes:
+
+1. **Normalized** — a pre-computed `execution: ExecutionResult` (backwards
+   compatible with the previous ingest contract).
+2. **Raw** — the untransformed runtime signal from an upstream agent, using
+   any combination of these top-level fields:
+   - `runtime_events`: list of `{stage, status, message, metadata, ...}` entries.
+   - `tool_calls`: list of `{name, status, output|error, ...}` entries.
+   - `model_messages`: list of `{role, content, ...}` entries.
+   - `trace_metadata`: arbitrary JSON dictionary (e.g. `puck_task_id`,
+     `dispatch_id`, `indicator`, `rca_filter`, `confidence`).
+
+At least one of `execution` or a raw channel must be present, otherwise the
+server responds with `422`.
+
+The `UploadedTraceWorker` runs a real analysis pass over the payload before
+`collect_evidence` / `attribute` / `finalize`. Analysis steps
+(`agent.analyze`, `agent.analyze.runtime_events`,
+`agent.analyze.tool_calls`, `agent.analyze.model_messages`,
+`agent.analyze.metadata`, `agent.analyze.summarize`) surface as discrete
+runtime events in the resulting `GET /runs/{run_id}` response.
 
 Completed runs are stored under `reports/langgraph/`.
 

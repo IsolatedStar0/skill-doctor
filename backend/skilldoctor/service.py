@@ -138,7 +138,7 @@ class RunService:
         )
         yield from self._stream_with_worker(
             run_request,
-            UploadedTraceWorker(request.execution),
+            UploadedTraceWorker(request),
         )
 
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:

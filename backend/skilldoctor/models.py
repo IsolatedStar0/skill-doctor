@@ -3,7 +3,7 @@ from __future__ import annotations
 from operator import add
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TokenUsage(BaseModel):
@@ -126,7 +126,19 @@ class RunRequest(BaseModel):
 
 
 class TraceIngestRequest(BaseModel):
-    """Normalized trace payload pushed by an external Aime execution."""
+    """Trace payload pushed by an external Aime execution.
+
+    Two shapes are supported:
+
+    1. **Normalized**: caller has already reduced the trace to an
+       :class:`ExecutionResult`. The uploaded worker will still run agent
+       analysis over ``runtime_events`` embedded in that result.
+    2. **Raw**: caller sends the untransformed runtime signal (raw
+       ``runtime_events``, ``tool_calls``, ``model_messages`` and optional
+       ``trace_metadata``). The uploaded worker synthesizes an
+       :class:`ExecutionResult` from that signal before the LangGraph
+       pipeline runs the attribute / evidence / finalize nodes.
+    """
 
     task: str = "Imported Aime Skill execution trace."
     skill_id: str
@@ -140,7 +152,31 @@ class TraceIngestRequest(BaseModel):
     parent_run_id: str | None = None
     repair_enabled: bool = True
     max_attempts: int = Field(default=1, ge=1, le=5)
-    execution: ExecutionResult
+    execution: ExecutionResult | None = None
+    runtime_events: list[dict[str, Any]] = Field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    model_messages: list[dict[str, Any]] = Field(default_factory=list)
+    trace_metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def has_raw_signal(self) -> bool:
+        """True when any raw trace channel carries data."""
+
+        return bool(
+            self.runtime_events
+            or self.tool_calls
+            or self.model_messages
+            or self.trace_metadata
+        )
+
+    @model_validator(mode="after")
+    def _require_payload(self) -> "TraceIngestRequest":
+        if self.execution is None and not self.has_raw_signal():
+            raise ValueError(
+                "TraceIngestRequest requires either 'execution' or at least "
+                "one raw trace field (runtime_events / tool_calls / "
+                "model_messages / trace_metadata)."
+            )
+        return self
 
 
 class AgentState(TypedDict):
