@@ -251,6 +251,10 @@ def build_agent_graph(
             execution.executor == "codex-sdk-live"
             or "network" in execution.error.lower()
         ):
+            platform_adaptor_fields = {
+                **adaptor_fields,
+                "fault_type": FaultType.REASONING_WRONG.value,
+            }
             result = AttributionResult(
                 taxonomy="Non-Skill Cause",
                 cause="platform",
@@ -259,7 +263,7 @@ def build_agent_graph(
                 action="split_non_skill",
                 evidence_refs=[state["evidence_snapshot"]["execution_sha256"]],
                 explanation="The execution failed at the platform boundary.",
-                **adaptor_fields,
+                **platform_adaptor_fields,
             )
         elif failed_skill_assertions or (execution.task_kind == "code-repair" and failed_system_assertions):
             loading_miss = execution.condition == "without_skill"
