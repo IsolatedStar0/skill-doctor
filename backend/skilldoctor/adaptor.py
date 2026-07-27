@@ -27,12 +27,38 @@ inside the graph so unit tests and offline benchmarks remain reproducible.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .models import ExecutionResult
+
+
+LOGGER = logging.getLogger("skilldoctor.adaptor")
+MAX_LLM_TRAJECTORY_STEPS = 24
+MAX_STEP_DETAIL_CHARS = 500
+MAX_SKILL_BODY_CHARS = 6_000
+MAX_LLM_JSON_CHARS = 20_000
+_PLACEHOLDER_TEXT = {
+    "",
+    "(no action)",
+    "(end)",
+    "(no transcript captured)",
+    "(assistant response)",
+}
+_SYNTHETIC_STAGE_PREFIXES = (
+    "agent.analyze",
+    "prepare",
+    "execute",
+    "collect_evidence",
+    "attribute",
+    "repair",
+    "verify",
+    "promote",
+    "finalize",
+)
 
 # ---------------------------------------------------------------------------
 # Types
@@ -70,6 +96,15 @@ class TrajectoryStep:
             "detail": self.detail,
         }
 
+    def prompt_dict(self) -> Dict[str, Any]:
+        return {
+            "index": self.index,
+            "source": self.source,
+            "label": self.label,
+            "passed": self.passed,
+            "detail": _truncate(self.detail, MAX_STEP_DETAIL_CHARS),
+        }
+
 
 @dataclass
 class LocalizedFault:
@@ -103,6 +138,23 @@ class LocalizedFault:
             "reason": self.reason,
             "steps": [s.as_dict() for s in self.steps],
         }
+
+    def prompt_dict(self, *, include_steps: bool = False) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "fault_type": self.fault_type.value,
+            "t_star": self.t_star,
+            "fault_chain": self.fault_chain,
+            "improvement_principle": self.improvement_principle,
+            "wrong_action": self.wrong_action,
+            "observation": _truncate(self.observation, MAX_STEP_DETAIL_CHARS),
+            "reason": _truncate(self.reason, MAX_STEP_DETAIL_CHARS),
+        }
+        if include_steps:
+            payload["steps"] = [
+                step.prompt_dict()
+                for step in _select_prompt_steps(self.steps)
+            ]
+        return payload
 
 
 @dataclass
@@ -161,6 +213,8 @@ def trajectory_from_execution(execution: ExecutionResult) -> List[TrajectoryStep
 
     steps: List[TrajectoryStep] = []
     for idx, event in enumerate(execution.runtime_events):
+        if not _is_actionable_runtime_event(event):
+            continue
         status = str(event.get("status", "completed"))
         passed = status not in {"failed", "error"}
         label = str(event.get("stage") or event.get("type") or f"runtime[{idx}]")
@@ -185,6 +239,66 @@ def trajectory_from_execution(execution: ExecutionResult) -> List[TrajectoryStep
             )
         )
     return steps
+
+
+def _truncate(text: str, limit: int) -> str:
+    value = str(text or "").strip()
+    return value if len(value) <= limit else f"{value[: limit - 1]}…"
+
+
+def _is_placeholder_text(value: Any) -> bool:
+    return str(value or "").strip().lower() in _PLACEHOLDER_TEXT
+
+
+def _is_actionable_runtime_event(event: Dict[str, Any]) -> bool:
+    stage = str(event.get("stage") or event.get("type") or "").strip()
+    if any(
+        stage == prefix or stage.startswith(f"{prefix}.")
+        for prefix in _SYNTHETIC_STAGE_PREFIXES
+    ):
+        return False
+    status = str(event.get("status") or "completed").lower()
+    message = event.get("message") or event.get("detail") or ""
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    if status in {"failed", "error"}:
+        return True
+    if status in {"started", "skipped"} and _is_placeholder_text(message):
+        return False
+    return bool(stage or not _is_placeholder_text(message) or metadata)
+
+
+def _select_prompt_steps(steps: List[TrajectoryStep]) -> List[TrajectoryStep]:
+    if len(steps) <= MAX_LLM_TRAJECTORY_STEPS:
+        return steps
+    failing_indices = [index for index, step in enumerate(steps) if not step.passed]
+    if not failing_indices:
+        return steps[:MAX_LLM_TRAJECTORY_STEPS]
+    first_failure = failing_indices[0]
+    before = max(0, first_failure - 8)
+    after = min(len(steps), first_failure + 8)
+    window = steps[before:after]
+    if len(window) < MAX_LLM_TRAJECTORY_STEPS:
+        remainder = MAX_LLM_TRAJECTORY_STEPS - len(window)
+        window = [*steps[:remainder], *window]
+    return window[:MAX_LLM_TRAJECTORY_STEPS]
+
+
+def _format_trajectory_for_prompt(steps: List[TrajectoryStep]) -> str:
+    selected = _select_prompt_steps(steps)
+    omitted = len(steps) - len(selected)
+    lines = [
+        f"Step {s.index}: [{s.source}/{s.label}] "
+        f"{'PASS' if s.passed else 'FAIL'} - "
+        f"{_truncate(s.detail, MAX_STEP_DETAIL_CHARS)}"
+        for s in selected
+    ]
+    if omitted > 0:
+        lines.append(f"... omitted {omitted} low-signal step(s) for prompt budget ...")
+    return "\n".join(lines)
+
+
+def _trim_skill_body(body: str) -> str:
+    return _truncate(body or "", MAX_SKILL_BODY_CHARS)
 
 
 def _first_failing_index(steps: List[TrajectoryStep]) -> int:
@@ -258,17 +372,12 @@ class Localizer:
         if self.llm_client is not None:
             fault = self._localize_with_llm(execution, steps, task)
             if fault is not None:
-                try:
-                    import logging
-
-                    logging.getLogger("skilldoctor.adaptor").info(
-                        "Localizer: DeepSeek invoked → fault_type=%s t*=%s conclusion=%r",
-                        fault.fault_type.value,
-                        fault.t_star,
-                        (fault.improvement_principle or "")[:160],
-                    )
-                except Exception:
-                    pass
+                LOGGER.info(
+                    "Localizer: LLM invoked → fault_type=%s t*=%s conclusion=%r",
+                    fault.fault_type.value,
+                    fault.t_star,
+                    (fault.improvement_principle or "")[:160],
+                )
                 return fault
         return self._localize_rule_based(execution, steps, current_skill_id)
 
@@ -383,18 +492,14 @@ class Localizer:
         client = self.llm_client
         if client is None:
             return None
-        trajectory_str = "\n".join(
-            f"Step {s.index}: [{s.source}/{s.label}] "
-            f"{'PASS' if s.passed else 'FAIL'} - {s.detail}"
-            for s in steps
-        )
+        trajectory_str = _format_trajectory_for_prompt(steps)
         prompt = _LOCALIZER_PROMPT_TEMPLATE.format(
             task=task or "(no task description provided)",
             trajectory=trajectory_str,
         )
         try:
             raw = client(prompt)
-            payload = _extract_json(raw)
+            payload = _extract_json(raw, context="localizer")
             if not payload:
                 return None
             ft = FaultType(payload.get("fault_type", "unknown"))
@@ -416,7 +521,8 @@ class Localizer:
                 reason=reason,
                 source="llm",
             )
-        except Exception:  # pragma: no cover - LLM parsing is best-effort
+        except Exception as error:  # pragma: no cover - LLM parsing is best-effort
+            LOGGER.warning("Localizer LLM output rejected: %s", error)
             return None
 
 
@@ -535,14 +641,17 @@ class Generator:
             try:
                 prompt = _GENERATOR_PROMPT_TEMPLATE.format(
                     task=task or "(no task provided)",
-                    fault_json=json.dumps(fault.as_dict(), indent=2),
-                    skill_body=current_body or "(empty)",
+                    fault_json=json.dumps(
+                        fault.prompt_dict(include_steps=True),
+                        indent=2,
+                    ),
+                    skill_body=_trim_skill_body(current_body) or "(empty)",
                 )
                 text = self.llm_client(prompt)
                 if text and text.strip():
                     return text.strip()
-            except Exception:  # pragma: no cover
-                pass
+            except Exception as error:  # pragma: no cover
+                LOGGER.warning("Generator LLM output rejected: %s", error)
 
         header = f"## Loader hint for `{skill_id}`" if skill_id else "## Loader hint"
         block = (
@@ -615,20 +724,30 @@ class Reviser:
                 payload = _extract_json(
                     self.llm_client(
                         _REVISER_PROMPT_TEMPLATE.format(
-                            skill_body=current_body,
-                            fault_json=json.dumps(fault.as_dict(), indent=2),
+                            skill_body=_trim_skill_body(current_body),
+                            fault_json=json.dumps(
+                                fault.prompt_dict(include_steps=True),
+                                indent=2,
+                            ),
                         )
-                    )
+                    ),
+                    context="reviser",
                 )
                 if payload:
-                    revision_type = str(
-                        payload.get("revision_type", revision_type)
-                    )
+                    proposed_type = str(payload.get("revision_type", revision_type))
+                    accepted_payload = proposed_type in self.DEFAULT_REVISION_TYPES
+                    if proposed_type in self.DEFAULT_REVISION_TYPES:
+                        revision_type = proposed_type
+                    else:
+                        LOGGER.warning(
+                            "Reviser ignored unsupported revision_type=%r",
+                            proposed_type,
+                        )
                     after = str(payload.get("after", "")).strip()
-                    if after:
+                    if accepted_payload and after:
                         patch_text = after
-            except Exception:  # pragma: no cover
-                pass
+            except Exception as error:  # pragma: no cover
+                LOGGER.warning("Reviser LLM output rejected: %s", error)
 
         new_body = self._apply_revision(
             current_body,
@@ -790,28 +909,85 @@ class Qualifier:
 # Utils
 # ---------------------------------------------------------------------------
 
-_JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}")
-
-
-def _extract_json(raw: str) -> Optional[Dict[str, Any]]:
+def _extract_json(
+    raw: str,
+    *,
+    context: str = "LLM response",
+) -> Optional[Dict[str, Any]]:
     """Best-effort JSON extraction from a possibly noisy LLM response."""
 
     if not raw:
         return None
-    text = raw.strip()
+    text = raw.strip()[:MAX_LLM_JSON_CHARS]
     # Strip common code fences
     text = re.sub(r"^```(?:json)?", "", text)
     text = re.sub(r"```$", "", text.strip())
+    errors: List[str] = []
     try:
-        return json.loads(text)
-    except Exception:
-        match = _JSON_BLOCK_RE.search(text)
-        if not match:
-            return None
-        try:
-            return json.loads(match.group(0))
-        except Exception:
-            return None
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise ValueError(f"{context} JSON must be an object")
+        return payload
+    except Exception as error:
+        errors.append(str(error))
+        candidates = []
+        if "```" in raw:
+            candidates.extend(
+                match.group(1)
+                for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", raw)
+            )
+        candidates.extend(_json_object_candidates(text))
+        seen: set[str] = set()
+        for candidate in candidates:
+            candidate = candidate.strip()[:MAX_LLM_JSON_CHARS]
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                payload = json.loads(candidate)
+                if not isinstance(payload, dict):
+                    raise ValueError(f"{context} JSON must be an object")
+                return payload
+            except Exception as candidate_error:
+                errors.append(str(candidate_error))
+        preview = text.replace("\n", " ")[:300]
+        LOGGER.warning(
+            "Could not parse %s JSON: %s; preview=%r",
+            context,
+            "; ".join(errors[:3]),
+            preview,
+        )
+        return None
+
+
+def _json_object_candidates(text: str) -> List[str]:
+    candidates: List[str] = []
+    start: int | None = None
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if char == "\\" and in_string:
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                candidates.append(text[start : index + 1])
+                start = None
+    return candidates
 
 
 __all__ = [

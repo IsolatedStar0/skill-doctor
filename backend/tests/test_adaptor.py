@@ -43,6 +43,7 @@ def _make_execution(
     assertions: list[AssertionResult] | None = None,
     error: str | None = None,
     executor: str = "fixture",
+    runtime_events: list[dict] | None = None,
 ) -> ExecutionResult:
     return ExecutionResult(
         executor=executor,
@@ -52,6 +53,7 @@ def _make_execution(
         duration_ms=100,
         usage=TokenUsage(input_tokens=10, output_tokens=10),
         assertions=assertions or [],
+        runtime_events=runtime_events or [],
         summary="",
         error=error,
     )
@@ -176,6 +178,54 @@ def test_reviser_adds_negative_example_for_reasoning_wrong() -> None:
     assert revision_type == "add_negative_example"
     assert "Do NOT" in body
     assert "step" in body.lower()
+
+
+def test_trajectory_filters_synthetic_analysis_events() -> None:
+    execution = _make_execution(
+        passed=False,
+        runtime_events=[
+            {
+                "stage": "agent.analyze.summarize",
+                "status": "failed",
+                "message": "Synthetic analyzer summary failed.",
+            },
+            {
+                "stage": "puck.noise_judge",
+                "status": "failed",
+                "message": "Business tool produced a low-confidence verdict.",
+            },
+        ],
+    )
+
+    steps = trajectory_from_execution(execution)
+
+    assert [step.label for step in steps] == ["puck.noise_judge"]
+
+
+def test_reviser_ignores_unsupported_llm_revision_type() -> None:
+    fault = Localizer().localize(
+        _make_execution(
+            passed=False,
+            assertions=[
+                AssertionResult(id="constraint", source="skill", passed=False)
+            ],
+        ),
+        current_skill_id="target",
+    )
+    assert fault is not None
+    head = Linker().attribute(fault, current_skill_id="target")[0]
+    reviser = Reviser(
+        llm_client=lambda _: '{"revision_type":"delete_skill","after":"DELETE ALL"}'
+    )
+
+    body, revision_type, _ = reviser.revise(
+        fault,
+        current_body="# Skill body",
+        attribution=head,
+    )
+
+    assert revision_type == "clarify_procedure"
+    assert "DELETE ALL" not in body
 
 
 def test_generator_appends_loader_hint_when_body_empty() -> None:
