@@ -256,9 +256,9 @@ class BenchmarkService:
                 ],
             },
             "artifacts": {
-                "evidenceSnapshot": (
-                    f"reports/langgraph/{child['run_id']}.json"
-                ),
+                "evidenceSnapshot": str(
+                    (Path("reports") / "langgraph" / f"{child['run_id']}.json")
+                ).replace("\\", "/"),
                 "codexJsonl": artifacts.get("codexJsonl", ""),
                 "pytestOutput": artifacts.get("pytestOutput", ""),
                 "gitDiff": artifacts.get("gitDiff", ""),

@@ -35,6 +35,7 @@ Skill Doctor 是一个完全离线、确定性可复现的 Agent Skill 可观测
 
 - Node.js >= 22.13
 - npm
+- Python 3.11+
 
 离线 Demo 和测试不需要数据库、API Key 或外部服务；只有真实 Codex
 probe 需要本机 Codex 登录态和网络访问。
@@ -124,7 +125,7 @@ prepare -> execute -> collect_evidence
 安装 Python 依赖：
 
 ```bash
-python -m pip install -e "backend[api,dev]"
+node scripts/python.mjs -m pip install -e "backend[api,dev]"
 ```
 
 运行完全离线、确定性可复现的 Content Gap 自修复：
@@ -184,12 +185,9 @@ Codex SDK / Fixture Worker
 只作为第二可观测界面。未配置凭证、网络不可用或 exporter 异常都不会中断
 Agent 的归因、修复和验证流程。
 
-```powershell
-python -m pip install -e "backend[api,dev,observability]"
-$env:LANGSMITH_TRACING="true"
-$env:LANGSMITH_API_KEY="<your-key>"
-$env:LANGSMITH_PROJECT="skill-doctor-dev"
-npm run agent:api
+```bash
+node scripts/python.mjs -m pip install -e "backend[api,dev,observability]"
+npx cross-env LANGSMITH_TRACING="true" LANGSMITH_API_KEY="<your-key>" LANGSMITH_PROJECT="skill-doctor-dev" npm run agent:api
 ```
 
 每次运行只创建一条名为 `skill-doctor.run` 的 LangGraph 原生根 trace。

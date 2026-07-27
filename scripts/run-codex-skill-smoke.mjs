@@ -44,7 +44,7 @@ function parseDataset(text) {
 function compileVerifier(testCode) {
   const verifierBase64 = Buffer.from(testCode, "utf8").toString("base64");
   const result = spawnSync(
-    "python",
+    process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3.11"),
     [
       "-c",
       "import base64, os; compile(base64.b64decode(os.environ['CODEX_SMOKE_VERIFIER_B64']).decode('utf-8'), '<benchmark-verifier>', 'exec')",

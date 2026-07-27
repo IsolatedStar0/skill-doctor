@@ -124,7 +124,7 @@ async function runPytestVerifier(workspace, response, assertions) {
     "utf8",
   );
   const result = spawnSync(
-    "python",
+    process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3.11"),
     [
       "-m",
       "pytest",
