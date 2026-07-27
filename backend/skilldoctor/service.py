@@ -136,9 +136,15 @@ class RunService:
             max_attempts=request.max_attempts,
             stream_delay_ms=0,
         )
+        extra_state: dict[str, Any] | None = None
+        if request.business_result is not None:
+            extra_state = {
+                "business_result": request.business_result.model_dump(mode="json"),
+            }
         yield from self._stream_with_worker(
             run_request,
             UploadedTraceWorker(request),
+            extra_state=extra_state,
         )
 
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:
@@ -148,6 +154,7 @@ class RunService:
         self,
         request: RunRequest,
         worker: ExecutionWorker,
+        extra_state: dict[str, Any] | None = None,
     ) -> Iterator[dict[str, Any]]:
         run_id = f"lg-{uuid4().hex[:12]}"
         exporter = self.exporter_factory(run_id, request)
@@ -176,6 +183,8 @@ class RunService:
             try:
                 initial_state = self._initial_state(request, run_id)
                 initial_state["observability"] = exporter.snapshot()
+                if extra_state:
+                    initial_state.update(extra_state)
                 for state in graph.stream(
                     initial_state,
                     config=config,

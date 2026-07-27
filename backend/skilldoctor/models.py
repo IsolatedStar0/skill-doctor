@@ -24,6 +24,22 @@ class AssertionResult(BaseModel):
     detail: str | None = None
 
 
+class BusinessResultDetail(BaseModel):
+    name: str
+    status: Literal["pass", "fail", "warning"]
+    reason: str = ""
+
+
+class BusinessResult(BaseModel):
+    """Generic skill conclusion for data-driven display."""
+
+    verdict: str
+    verdict_type: Literal["pass", "fail", "warning"]
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    details: list[BusinessResultDetail] = Field(default_factory=list)
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExecutionResult(BaseModel):
     executor: str
     condition: str
@@ -153,6 +169,7 @@ class TraceIngestRequest(BaseModel):
     repair_enabled: bool = True
     max_attempts: int = Field(default=1, ge=1, le=5)
     execution: ExecutionResult | None = None
+    business_result: BusinessResult | None = None
     runtime_events: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     model_messages: list[dict[str, Any]] = Field(default_factory=list)
@@ -195,6 +212,7 @@ class AgentState(TypedDict):
     max_attempts: int
     status: str
     stop_reason: str
+    business_result: NotRequired[dict[str, Any]]
     execution: NotRequired[dict[str, Any]]
     baseline_execution: NotRequired[dict[str, Any]]
     evidence_snapshot: NotRequired[dict[str, Any]]

@@ -6,6 +6,7 @@ import {
   type LangGraphState,
 } from "../lib/langgraph-stream";
 import { useRunStore } from "./RunStore";
+import BusinessResultCard from "./BusinessResultCard";
 
 type RunMode = "fixture" | "replay" | "codex";
 type UiStatus = "idle" | "running" | "passed" | "failed" | "error";
@@ -237,6 +238,10 @@ export default function LangGraphDashboard() {
           </small>
         </article>
       </div>
+
+      {snapshot?.business_result ? (
+        <BusinessResultCard result={snapshot.business_result} />
+      ) : null}
 
       <article className="graph-timeline panel">
         <div className="panel-heading">

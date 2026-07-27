@@ -7,6 +7,20 @@ export type LangGraphTokenUsage = {
   reasoning_tokens: number;
 };
 
+export type BusinessResultDetail = {
+  name: string;
+  status: "pass" | "fail" | "warning";
+  reason: string;
+};
+
+export type BusinessResult = {
+  verdict: string;
+  verdict_type: "pass" | "fail" | "warning";
+  confidence?: number | null;
+  details: BusinessResultDetail[];
+  extra: Record<string, unknown>;
+};
+
 export type LangGraphEvent = {
   sequence: number;
   stage: string;
@@ -52,6 +66,7 @@ export type LangGraphState = {
   max_attempts: number;
   status: string;
   stop_reason: string;
+  business_result?: BusinessResult | null;
   observability?: {
     provider: "langsmith";
     enabled: boolean;
