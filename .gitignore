@@ -54,3 +54,4 @@ __pycache__/
 /backend/.pytest_cache/
 /backend/*.egg-info/
 /.pytest-tmp*/
+.env

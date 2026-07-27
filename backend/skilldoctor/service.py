@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from .graph import build_agent_graph
+from .llm import build_deepseek_client
 from .models import AgentState, RunEvent, RunRequest, TraceIngestRequest
 from .observability import (
     LangSmithRunExporter,
@@ -40,6 +41,11 @@ class RunService:
         ).resolve()
         self.report_directory = self.project_root / "reports" / "langgraph"
         self.exporter_factory = exporter_factory
+        # Build a shared DeepSeek LLM client once per service. Returns None
+        # gracefully when DEEPSEEK_API_KEY / openai SDK is unavailable, in
+        # which case Skill-Adaptor stages keep using their rule-based
+        # deterministic fallbacks.
+        self.adaptor_llm_client = build_deepseek_client()
 
     def _worker(self, request: RunRequest) -> ExecutionWorker:
         if request.executor == "codex":
@@ -173,6 +179,7 @@ class RunService:
         graph = build_agent_graph(
             worker,
             runtime_event_observer=observe_runtime_event,
+            adaptor_llm_client=self.adaptor_llm_client,
         )
         config = {
             **exporter.graph_config(),
