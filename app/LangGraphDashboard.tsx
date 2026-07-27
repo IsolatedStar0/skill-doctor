@@ -368,12 +368,6 @@ export default function LangGraphDashboard() {
                 "归因节点会区分 Skill、loader、tool 与 platform 责任。"}
             </p>
           )}
-          {snapshot?.attribution?.agent_source === "rule-based" &&
-          snapshot?.attribution?.explanation ? (
-            <p style={{ opacity: 0.7, fontSize: 12 }}>
-              规则化摘要：{snapshot.attribution.explanation}
-            </p>
-          ) : null}
           <footer>
             confidence {percent(snapshot?.attribution?.confidence)}
             {snapshot?.attribution?.agent_source

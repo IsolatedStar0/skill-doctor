@@ -167,10 +167,9 @@ def _summarise(body: str) -> None:
             attribution.get("fault_type"),
         )
     )
-    conclusion = attribution.get("agent_conclusion") or attribution.get(
-        "improvement_principle"
-    )
-    reason = attribution.get("agent_reason")
+    agent_source = attribution.get("agent_source")
+    conclusion = attribution.get("agent_conclusion") if agent_source == "llm" else None
+    reason = attribution.get("agent_reason") if agent_source == "llm" else None
     if conclusion:
         print("--- 🤖 AI 归因结论 ---")
         print(conclusion)
@@ -178,6 +177,10 @@ def _summarise(body: str) -> None:
         print("--- 归因理由 ---")
         print(reason)
     if not conclusion:
+        fallback = attribution.get("improvement_principle")
+        if fallback:
+            print("--- 规则化归因摘要 ---")
+            print(fallback)
         print(
             "note: attribution has no LLM-authored conclusion — verify that\n"
             "      DEEPSEEK_API_KEY is exported to the uvicorn process and\n"

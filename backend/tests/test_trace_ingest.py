@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 from backend.skilldoctor.http_server import make_handler
+from backend.skilldoctor.models import TraceIngestRequest
 from backend.skilldoctor.service import RunService
 from http.server import ThreadingHTTPServer
 
@@ -86,6 +87,7 @@ def test_trace_ingest_runs_attribution_pipeline(
     monkeypatch.setenv("SKILL_DOCTOR_INGEST_API_KEY", "secret-token")
     service = RunService(PROJECT_ROOT)
     service.report_directory = tmp_path
+    service.adaptor_llm_client = None
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -113,6 +115,8 @@ def test_trace_ingest_runs_attribution_pipeline(
         assert state["executor"] == "trace-ingest"
         assert state["execution"]["executor"] == "aime-skill-trace"
         assert state["attribution"]["cause"] == "skill"
+        assert state["attribution"]["agent_source"] == "rule-based"
+        assert state["attribution"]["agent_conclusion"] == ""
         assert state["status"] == "failed"
         assert service.get(state["run_id"])["run_id"] == state["run_id"]
         stages = [event["stage"] for event in state["events"]]
@@ -122,6 +126,38 @@ def test_trace_ingest_runs_attribution_pipeline(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_trace_ingest_passed_aime_trace_keeps_fast_path(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    service.adaptor_llm_client = lambda prompt: calls.append(prompt) or "{}"
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(
+            {
+                "task": "Summarize healthy Aime trace.",
+                "skill_id": "healthy-skill",
+                "skill_version": "1.0.0",
+                "skill_content": "Follow the safe path.",
+                "repair_enabled": False,
+                "runtime_events": [
+                    {
+                        "stage": "aime.done",
+                        "status": "completed",
+                        "message": "Aime skill finished successfully.",
+                    }
+                ],
+                "trace_metadata": {"confidence": 0.9},
+            }
+        )
+    )
+
+    assert state["status"] == "passed"
+    assert state["stop_reason"] == "initial_execution_passed"
+    assert "attribution" not in state
+    assert calls == []
 
 
 def _raw_puck_trace_payload() -> str:

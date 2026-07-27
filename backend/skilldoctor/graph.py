@@ -207,11 +207,7 @@ def build_agent_graph(
         # ---- Skill-Adaptor Attribution stage --------------------------------
         # 1) Localizer: pinpoint t*, classify fault type, draft principle.
         # 2) Linker:    score which skill is responsible for the fault.
-        # For traces that arrived from an Aime skill execution we always ask
-        # DeepSeek to summarise the run, even if every heuristic check
-        # passed — otherwise the frontend would show a canned rule-based
-        # template instead of a real agent-authored conclusion.
-        force_llm = execution.executor == "aime-skill-trace"
+        force_llm = execution.executor == "aime-skill-trace" and not execution.passed
         localized = localizer.localize(
             execution,
             task=state.get("task", ""),
@@ -232,19 +228,22 @@ def build_agent_graph(
         # preserved.
         adaptor_fields: dict[str, Any] = {}
         if localized is not None:
+            agent_source = (
+                "llm"
+                if getattr(localized, "source", "rule-based") == "llm"
+                else "rule-based"
+            )
             adaptor_fields = {
                 "fault_type": localized.fault_type.value,
                 "t_star": localized.t_star,
                 "fault_chain": localized.fault_chain,
                 "improvement_principle": localized.improvement_principle,
                 "skill_attributions": [a.as_dict() for a in attributions],
-                "agent_conclusion": localized.improvement_principle,
-                "agent_reason": localized.reason,
-                "agent_source": (
-                    "llm"
-                    if getattr(localized, "source", "rule-based") == "llm"
-                    else "rule-based"
+                "agent_conclusion": (
+                    localized.improvement_principle if agent_source == "llm" else ""
                 ),
+                "agent_reason": localized.reason if agent_source == "llm" else "",
+                "agent_source": agent_source,
             }
 
         if execution.error and (
@@ -529,10 +528,7 @@ def build_agent_graph(
 
     def route_after_evidence(state: AgentState) -> str:
         execution = ExecutionResult.model_validate(state["execution"])
-        # Uploaded Aime traces should always be sent through the attribute
-        # node so DeepSeek can author a real conclusion, even when every
-        # heuristic assertion has passed.
-        if execution.executor == "aime-skill-trace":
+        if execution.executor == "aime-skill-trace" and not execution.passed:
             return "attribute"
         if execution.passed:
             return "verify" if state.get("repair_patch") else "finalize"
