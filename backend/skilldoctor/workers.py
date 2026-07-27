@@ -61,6 +61,31 @@ class FixtureWorker:
             )
 
         paired = condition in {"without_skill", "with_skill"}
+        if self.scenario == "code-repair":
+            passed = attempt > 0
+            return ExecutionResult(
+                executor="fixture",
+                condition=condition,
+                task_kind="code-repair",
+                passed=passed,
+                pass_rate=1.0 if passed else 0.5,
+                duration_ms=1200,
+                assertions=[
+                    AssertionResult(
+                        id="fix-bug",
+                        source="task",
+                        passed=passed,
+                        detail="Bug fixed." if passed else "Bug remains.",
+                    ),
+                    AssertionResult(
+                        id="pass-pytest",
+                        source="system",
+                        passed=passed,
+                        detail="Tests passed." if passed else "Tests failed.",
+                    ),
+                ],
+            )
+        
         repaired = (
             condition == "with_skill"
             if paired

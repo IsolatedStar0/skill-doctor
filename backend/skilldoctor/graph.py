@@ -176,6 +176,10 @@ def build_agent_graph(
         failed_skill_assertions = [
             item for item in execution.assertions if not item.passed and item.source == "skill"
         ]
+        failed_system_assertions = [
+            item for item in execution.assertions if not item.passed and item.source == "system"
+        ]
+
         if execution.error and (
             execution.executor == "codex-sdk-live"
             or "network" in execution.error.lower()
@@ -189,23 +193,30 @@ def build_agent_graph(
                 evidence_refs=[state["evidence_snapshot"]["execution_sha256"]],
                 explanation="The execution failed at the platform boundary.",
             )
-        elif failed_skill_assertions:
+        elif failed_skill_assertions or (execution.task_kind == "code-repair" and failed_system_assertions):
             loading_miss = execution.condition == "without_skill"
+            taxonomy = "Loading Miss" if loading_miss else "Content Gap"
+            cause = "loader" if loading_miss else "skill"
+
+            # If it's a code repair and only system (test) failed, it's still a content gap
+            # because the skill didn't prevent the bug.
+            explanation = (
+                "The target Skill was absent from the control condition."
+                if loading_miss
+                else "Execution checks failed (code bug or missing constraints)."
+            )
+
             result = AttributionResult(
-                taxonomy="Loading Miss" if loading_miss else "Content Gap",
-                cause="loader" if loading_miss else "skill",
-                confidence=0.94 if loading_miss else 0.91,
+                taxonomy=taxonomy,
+                cause=cause,
+                confidence=0.94 if loading_miss else 0.88,
                 responsibility=0.92,
                 action="patch_loader" if loading_miss else "patch_skill",
                 evidence_refs=[
                     state["evidence_snapshot"]["assertion_sha256"],
-                    *[item.id for item in failed_skill_assertions],
+                    *[item.id for item in failed_skill_assertions + failed_system_assertions],
                 ],
-                explanation=(
-                    "The target Skill was absent from the control condition."
-                    if loading_miss
-                    else "Task checks passed while Skill-owned checks failed."
-                ),
+                explanation=explanation,
             )
         else:
             result = AttributionResult(
@@ -243,18 +254,18 @@ def build_agent_graph(
             )
             kind = "loader_patch"
         elif execution.executor == "codex-sdk-live":
-            failed_skill_assertions = [
+            failed_checks = [
                 item
                 for item in execution.assertions
-                if not item.passed and item.source == "skill"
+                if not item.passed and item.source in {"skill", "system"}
             ]
             requirements = "\n".join(
-                f"- {item.id}: {item.detail or 'Satisfy this Skill-owned check.'}"
-                for item in failed_skill_assertions
+                f"- {item.id}: {item.detail or 'Satisfy this check.'}"
+                for item in failed_checks
             )
             instruction = (
                 "\n\n## Verification addendum\n"
-                "The following Skill-owned requirements must be explicit in the result:\n"
+                "The following requirements must be explicit in the result or satisfy the verifier:\n"
                 f"{requirements}"
             )
             kind = "skill_patch"

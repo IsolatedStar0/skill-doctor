@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import process from "node:process";
 import { Codex } from "@openai/codex-sdk";
 
@@ -129,15 +129,15 @@ async function main() {
   const projectRoot = resolve(input.projectRoot);
   const context = await benchmarkContext(projectRoot, input.skillId);
   const task =
-    input.task === "Use the target Skill to produce a verified implementation plan." &&
-    context.row?.task_prompt
-      ? context.row.task_prompt
+    (input.task === "Use the target Skill to produce a verified implementation plan." || !input.task) &&
+    (context.probe?.taskPrompt || context.row?.task_prompt)
+      ? (context.probe?.taskPrompt || context.row?.task_prompt)
       : input.task;
   const content =
-    input.skillContent ===
-      "Inspect the task, execute the required procedure, and verify the result." &&
-    context.row?.skill_document
-      ? context.row.skill_document
+    (input.skillContent ===
+      "Inspect the task, execute the required procedure, and verify the result." || !input.skillContent) &&
+    (context.probe?.skillDocument || context.row?.skill_document)
+      ? (context.probe?.skillDocument || context.row?.skill_document)
       : input.skillContent;
 
   const workspace = await mkdtemp(
@@ -152,6 +152,16 @@ async function main() {
       "utf8",
     );
   }
+
+  // Initialize task-specific files
+  if (context.probe?.initialFiles) {
+    for (const [path, content] of Object.entries(context.probe.initialFiles)) {
+      const fullPath = join(workspace, path);
+      await mkdir(dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, content, "utf8");
+    }
+  }
+
   await writeFile(
     join(workspace, "README.md"),
     "# Skill Doctor isolated Codex execution\n",
@@ -172,13 +182,15 @@ async function main() {
   );
   await mkdir(artifactDirectory, { recursive: true });
 
+  const isRepair = context.probe?.taskKind === "code-repair";
   const prompt = [
     input.condition === "without_skill"
       ? "Complete the task without access to the target Skill."
       : "Use the installed Skill when it is applicable to the task.",
-    "This is an isolated, read-only reliability evaluation.",
-    "Do not modify files and do not execute the implementation.",
-    "Return a concise implementation plan containing exact constraints and verification requirements.",
+    "This is an isolated reliability evaluation.",
+    isRepair
+      ? "Modify the files in the workspace to satisfy the task requirements. You can execute commands to verify your work."
+      : "Do not modify files and do not execute the implementation. Return a concise implementation plan containing exact constraints and verification requirements.",
     "",
     task,
   ].join("\n");
@@ -189,7 +201,7 @@ async function main() {
     const codex = new Codex();
     const thread = codex.startThread({
       workingDirectory: workspace,
-      sandboxMode: "read-only",
+      sandboxMode: isRepair ? "none" : "read-only",
       approvalPolicy: "never",
       networkAccessEnabled: false,
       modelReasoningEffort: input.reasoningEffort,
@@ -218,7 +230,42 @@ async function main() {
   ) {
     error = null;
   }
+
+  let pytestOutput = "";
+  if (context.probe?.verifierCommand) {
+    const [cmd, ...args] = context.probe.verifierCommand.split(" ");
+    const result = spawnSync(cmd, args, {
+      cwd: workspace,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 60_000,
+    });
+    pytestOutput = [
+      `$ ${context.probe.verifierCommand}`,
+      result.stdout,
+      result.stderr,
+      `Exited with code ${result.status}`,
+    ].join("\n");
+  }
+
   const assertions = evaluateAssertions(response, context.probe?.assertions);
+  if (context.probe?.verifierCommand) {
+    const passed = pytestOutput.includes("Exited with code 0");
+    const assertionId = "pass-pytest";
+    const existingIndex = assertions.findIndex((a) => a.id === assertionId);
+    const verifierAssertion = {
+      id: assertionId,
+      source: "system",
+      passed,
+      detail: passed ? "Verifier command passed." : "Verifier command failed.",
+    };
+    if (existingIndex >= 0) {
+      assertions[existingIndex] = verifierAssertion;
+    } else {
+      assertions.push(verifierAssertion);
+    }
+  }
+
   const passedCount = assertions.filter((item) => item.passed).length;
   const passRate =
     assertions.length === 0 ? 0 : passedCount / assertions.length;
@@ -246,6 +293,7 @@ async function main() {
     codexJsonl: join(artifactDirectory, "codex.jsonl"),
     finalResponse: join(artifactDirectory, "final-response.txt"),
     gitDiff: join(artifactDirectory, "git.diff"),
+    pytestOutput: join(artifactDirectory, "pytest.txt"),
   };
   await Promise.all([
     writeFile(
@@ -256,6 +304,7 @@ async function main() {
     writeFile(files.codexJsonl, `${codexJsonl}\n`, "utf8"),
     writeFile(files.finalResponse, response, "utf8"),
     writeFile(files.gitDiff, gitDiff, "utf8"),
+    writeFile(files.pytestOutput, pytestOutput, "utf8"),
   ]);
 
   const result = {
@@ -267,6 +316,7 @@ async function main() {
         : input.attempt === 0
           ? "with_skill"
           : "with_repaired_skill",
+    task_kind: context.probe?.taskKind || "knowledge-probe",
     passed: error === null && assertions.every((item) => item.passed),
     pass_rate: passRate,
     duration_ms: durationMs,

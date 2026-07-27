@@ -27,6 +27,7 @@ class AssertionResult(BaseModel):
 class ExecutionResult(BaseModel):
     executor: str
     condition: str
+    task_kind: str = "knowledge-probe"
     passed: bool
     pass_rate: float = Field(ge=0, le=1)
     duration_ms: int = Field(ge=0)

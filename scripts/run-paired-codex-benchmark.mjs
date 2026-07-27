@@ -156,7 +156,7 @@ function git(workspace, args) {
   });
 }
 
-async function prepareWorkspace(row, condition) {
+async function prepareWorkspace(row, probe, condition) {
   const workspace = await mkdtemp(
     join(tmpdir(), `skill-pair-${row.skill_id}-${condition}-`),
   );
@@ -165,11 +165,21 @@ async function prepareWorkspace(row, condition) {
     [
       `# ${row.name} paired benchmark`,
       "",
-      "This isolated repository is used by the read-only benchmark runner.",
+      "This isolated repository is used by the benchmark runner.",
       "",
     ].join("\n"),
     "utf8",
   );
+
+  // Initialize task-specific files
+  if (probe.initialFiles) {
+    for (const [path, content] of Object.entries(probe.initialFiles)) {
+      const fullPath = join(workspace, path);
+      await mkdir(dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, content, "utf8");
+    }
+  }
+
   if (condition === "with_skill") {
     const skillDirectory = join(
       workspace,
@@ -225,7 +235,7 @@ async function runCondition({
   artifactRoot,
   timeoutMs,
 }) {
-  const workspace = await prepareWorkspace(row, condition);
+  const workspace = await prepareWorkspace(row, probe, condition);
   const artifactDirectory = join(
     artifactRoot,
     row.skill_id,
@@ -239,26 +249,32 @@ async function runCondition({
   let error = null;
   let usage = null;
   const abort = AbortSignal.timeout(timeoutMs);
+
+  const isRepair = probe.taskKind === "code-repair";
+  const taskPrompt = probe.taskPrompt || row.task_prompt;
+  const skillContent = probe.skillDocument || row.skill_document;
+
   const prompt = [
-    "You are running a read-only paired Skill knowledge probe.",
     condition === "with_skill"
       ? "Use the installed Skill when it is applicable. Extract its concrete procedural requirements."
       : "No Skill is installed. Use only the task statement and your baseline knowledge.",
-    "Do not inspect unrelated files, do not modify files, and do not execute the implementation.",
-    "Return the requested JSON only. Keep every checklist item concise but preserve exact filenames, thresholds, components, and verification requirements.",
+    "This is an isolated reliability evaluation.",
+    isRepair
+      ? "Modify the files in the workspace to satisfy the task requirements. You can execute commands to verify your work."
+      : "Do not inspect unrelated files, do not modify files, and do not execute the implementation. Return the requested JSON only. Keep every checklist item concise but preserve exact filenames, thresholds, components, and verification requirements.",
     "",
-    row.task_prompt,
+    taskPrompt,
   ].join("\n");
 
   try {
     const codex = new Codex();
     const thread = codex.startThread({
       workingDirectory: workspace,
-      sandboxMode: "read-only",
+      sandboxMode: isRepair ? "none" : "read-only",
       approvalPolicy: "never",
     });
     const streamed = await thread.runStreamed(prompt, {
-      outputSchema: outputSchema(),
+      outputSchema: isRepair ? undefined : outputSchema(),
       signal: abort,
     });
     for await (const event of streamed.events) {
@@ -288,10 +304,40 @@ async function runCondition({
   }
   const assertions = evaluateAssertions(response, probe.assertions);
   const gitDiff = git(workspace, ["diff", "--no-ext-diff", "--"]).stdout ?? "";
-  const pytest =
-    response === ""
-      ? { output: "Verifier skipped because Codex produced no response.\n", exitCode: 1 }
-      : await runPytestVerifier(workspace, response, probe.assertions);
+
+  let pytest;
+  if (isRepair && probe.verifierCommand) {
+    const [cmd, ...args] = probe.verifierCommand.split(" ");
+    const result = spawnSync(cmd, args, {
+      cwd: workspace,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 60_000,
+    });
+    pytest = {
+      output: [
+        `$ ${probe.verifierCommand}`,
+        result.stdout,
+        result.stderr,
+        `Exited with code ${result.status}`,
+      ].join("\n"),
+      exitCode: result.status,
+    };
+
+    // Update assertions based on verifier outcome
+    const passed = pytest.output.includes("Exited with code 0");
+    const systemAssertion = assertions.find(a => a.id === "pass-pytest");
+    if (systemAssertion) {
+      systemAssertion.passed = passed;
+      systemAssertion.matched = passed ? "Verifier command passed." : "Verifier command failed.";
+    }
+  } else {
+    pytest =
+      response === ""
+        ? { output: "Verifier skipped because Codex produced no response.\n", exitCode: 1 }
+        : await runPytestVerifier(workspace, response, probe.assertions);
+  }
+
   const codexJsonl = events
     .map((event) => JSON.stringify(event))
     .join("\n");
@@ -301,7 +347,7 @@ async function runCondition({
     skillId: row.skill_id,
     condition,
     executor: "codex-sdk",
-    taskKind: "knowledge-probe",
+    taskKind: probe.taskKind || "knowledge-probe",
     startedAt,
     durationMs,
     status,
@@ -345,7 +391,7 @@ async function runCondition({
     condition,
     status,
     executor: "codex-sdk",
-    taskKind: "knowledge-probe",
+    taskKind: probe.taskKind || "knowledge-probe",
     startedAt,
     durationMs,
     usage,
@@ -472,8 +518,19 @@ await mkdir(artifactRoot, { recursive: true });
 const pairs = [];
 
 for (const probe of selectedProbes) {
-  const row = dataset.find((candidate) => candidate.skill_id === probe.skillId);
-  if (!row) throw new Error(`Dataset is missing ${probe.skillId}.`);
+  let row = dataset.find((candidate) => candidate.skill_id === probe.skillId);
+  if (!row) {
+    if (probe.taskPrompt && probe.skillDocument) {
+      row = {
+        skill_id: probe.skillId,
+        name: probe.skillId,
+        task_prompt: probe.taskPrompt,
+        skill_document: probe.skillDocument
+      };
+    } else {
+      throw new Error(`Dataset is missing ${probe.skillId} and no default prompt/doc provided.`);
+    }
+  }
   let control = await loadCompletedRun({
     runId,
     row,

@@ -106,6 +106,84 @@
           "anyOf": ["validate", "validation", "health check"]
         }
       ]
+    },
+    {
+      "skillId": "python-bug-fix",
+      "dimension": "code-repair",
+      "taskKind": "code-repair",
+      "taskPrompt": "The `add` function in `src/calculator.py` has a bug where it adds 1 to the result. Fix it so it correctly adds the two input numbers. Run pytest to verify.",
+      "skillDocument": "---\nname: python-bug-fix\ndescription: Fix simple arithmetic bugs in Python.\n---\n\n# Python Bug Fix\n\nWhen fixing arithmetic bugs, ensure the operator and operands match the intended mathematical operation.\n",
+      "assertions": [
+        {
+          "id": "fix-off-by-one",
+          "label": "修复 off-by-one 错误",
+          "source": "task",
+          "passed": true
+        },
+        {
+          "id": "pass-pytest",
+          "label": "通过所有 pytest 测试",
+          "source": "system",
+          "passed": true
+        }
+      ],
+      "initialFiles": {
+        "src/calculator.py": "def add(a, b):\n    # Bug: returns a + b + 1\n    return a + b + 1\n",
+        "tests/test_calculator.py": "from src.calculator import add\ndef test_add():\n    assert add(2, 3) == 5\n"
+      },
+      "verifierCommand": "pytest tests/test_calculator.py"
+    },
+    {
+      "skillId": "python-logging",
+      "dimension": "code-repair",
+      "taskKind": "code-repair",
+      "taskPrompt": "Add a logging statement to `src/app.py` that logs the result of `process_data`. Use the standard `logging` module. The skill requires adding logging.",
+      "skillDocument": "---\nname: python-logging\ndescription: Add logging to Python functions.\n---\n\n# Python Logging\n\nAlways use `import logging` and `logging.info()` to record important execution steps.\n",
+      "assertions": [
+        {
+          "id": "add-logging",
+          "label": "添加 logging 语句",
+          "source": "skill",
+          "passed": true
+        },
+        {
+          "id": "pass-pytest",
+          "label": "通过验证测试",
+          "source": "system",
+          "passed": true
+        }
+      ],
+      "initialFiles": {
+        "src/app.py": "def process_data(data):\n    return data * 2\n",
+        "tests/test_app.py": "from src.app import process_data\ndef test_process():\n    assert process_data(10) == 20\n"
+      },
+      "verifierCommand": "pytest tests/test_app.py"
+    },
+    {
+      "skillId": "api-refactor",
+      "dimension": "code-repair",
+      "taskKind": "code-repair",
+      "taskPrompt": "Refactor the `fetch` function in `src/client.py` to use the `json=True` parameter (fictional) as required by the skill. Currently it just calls `.json()` on the response.",
+      "skillDocument": "---\nname: api-refactor\ndescription: Refactor API calls to use modern patterns.\n---\n\n# API Refactor\n\nWhen calling internal APIs, always ensure the `json=True` flag is passed to the fetcher if applicable.\n",
+      "assertions": [
+        {
+          "id": "refactor-api",
+          "label": "重构 API 调用",
+          "source": "skill",
+          "passed": true
+        },
+        {
+          "id": "pass-pytest",
+          "label": "通过验证测试",
+          "source": "system",
+          "passed": true
+        }
+      ],
+      "initialFiles": {
+        "src/client.py": "import requests\ndef fetch():\n    # Should be refactored to use some pattern\n    return requests.get('http://api.example.com').json()\n",
+        "tests/test_client.py": "from src.client import fetch\nimport responses\n@responses.activate\ndef test_fetch():\n    responses.add(responses.GET, 'http://api.example.com', json={'status': 'ok'}, status=200)\n    assert fetch() == {'status': 'ok'}\n"
+      },
+      "verifierCommand": "pytest tests/test_client.py"
     }
   ]
 }
