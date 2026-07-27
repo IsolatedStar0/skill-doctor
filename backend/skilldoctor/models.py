@@ -80,6 +80,17 @@ class AttributionResult(BaseModel):
     ]
     evidence_refs: list[str] = Field(default_factory=list)
     explanation: str
+    # -- Skill-Adaptor style attribution fields (all optional, backward compat)
+    fault_type: Literal[
+        "skill_wrong",
+        "skill_missing",
+        "reasoning_wrong",
+        "unknown",
+    ] = "unknown"
+    t_star: int | None = None
+    fault_chain: list[int] = Field(default_factory=list)
+    improvement_principle: str = ""
+    skill_attributions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RepairPatch(BaseModel):
@@ -92,6 +103,10 @@ class RepairPatch(BaseModel):
     after: str
     evidence_refs: list[str] = Field(default_factory=list)
     rollback_ref: str
+    # -- Skill-Adaptor style repair fields (all optional, backward compat)
+    repair_mode: Literal["generate", "revise", "loader", "none"] = "revise"
+    revision_type: str = ""
+    principle: str = ""
 
 
 class VerificationResult(BaseModel):
@@ -101,6 +116,11 @@ class VerificationResult(BaseModel):
     pass_rate_delta: float
     regression_rate: float
     reasons: list[str] = Field(default_factory=list)
+    # -- Qualifier fields (all optional, backward compat)
+    delta_avg_score: float = 0.0
+    regression_detected: bool = False
+    sample_size: int = 1
+    qualifier_reason: str = ""
 
 
 class RunEvent(BaseModel):

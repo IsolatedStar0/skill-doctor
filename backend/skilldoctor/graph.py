@@ -19,6 +19,15 @@ from .models import (
     RunEvent,
     VerificationResult,
 )
+from .adaptor import (
+    FaultType,
+    Generator,
+    LLMClient,
+    Linker,
+    Localizer,
+    Qualifier,
+    Reviser,
+)
 from .workers import ExecutionWorker
 
 
@@ -58,8 +67,23 @@ def build_agent_graph(
         None,
     ]
     | None = None,
+    *,
+    adaptor_llm_client: LLMClient | None = None,
 ):
-    """Compile the Skill Doctor lifecycle around an execution worker."""
+    """Compile the Skill Doctor lifecycle around an execution worker.
+
+    The optional ``adaptor_llm_client`` swaps every Skill-Adaptor stage
+    (Localizer / Linker / Generator / Reviser) from the deterministic
+    rule-based fallback to an LLM-driven implementation. When ``None`` the
+    graph behaves exactly as before, which keeps offline tests and
+    fixture-based benchmarks reproducible.
+    """
+
+    localizer = Localizer(llm_client=adaptor_llm_client)
+    linker = Linker(llm_client=adaptor_llm_client)
+    generator = Generator(llm_client=adaptor_llm_client)
+    reviser = Reviser(llm_client=adaptor_llm_client)
+    qualifier = Qualifier()
 
     def prepare(state: AgentState) -> dict[str, Any]:
         return {
@@ -180,6 +204,36 @@ def build_agent_graph(
             item for item in execution.assertions if not item.passed and item.source == "system"
         ]
 
+        # ---- Skill-Adaptor Attribution stage --------------------------------
+        # 1) Localizer: pinpoint t*, classify fault type, draft principle.
+        # 2) Linker:    score which skill is responsible for the fault.
+        localized = localizer.localize(
+            execution,
+            task=state.get("task", ""),
+            current_skill_id=state["skill_id"],
+        )
+        attributions = (
+            linker.attribute(
+                localized,
+                current_skill_id=state["skill_id"],
+            )
+            if localized is not None
+            else []
+        )
+
+        # Map fault_type / attribution back to Skill-Doctor's existing
+        # taxonomy so downstream contracts (API responses, tests) are
+        # preserved.
+        adaptor_fields: dict[str, Any] = {}
+        if localized is not None:
+            adaptor_fields = {
+                "fault_type": localized.fault_type.value,
+                "t_star": localized.t_star,
+                "fault_chain": localized.fault_chain,
+                "improvement_principle": localized.improvement_principle,
+                "skill_attributions": [a.as_dict() for a in attributions],
+            }
+
         if execution.error and (
             execution.executor == "codex-sdk-live"
             or "network" in execution.error.lower()
@@ -192,6 +246,7 @@ def build_agent_graph(
                 action="split_non_skill",
                 evidence_refs=[state["evidence_snapshot"]["execution_sha256"]],
                 explanation="The execution failed at the platform boundary.",
+                **adaptor_fields,
             )
         elif failed_skill_assertions or (execution.task_kind == "code-repair" and failed_system_assertions):
             loading_miss = execution.condition == "without_skill"
@@ -217,6 +272,7 @@ def build_agent_graph(
                     *[item.id for item in failed_skill_assertions + failed_system_assertions],
                 ],
                 explanation=explanation,
+                **adaptor_fields,
             )
         else:
             result = AttributionResult(
@@ -227,6 +283,7 @@ def build_agent_graph(
                 action="split_non_skill",
                 evidence_refs=[state["evidence_snapshot"]["assertion_sha256"]],
                 explanation="No failed assertion is owned by the Skill.",
+                **adaptor_fields,
             )
         return {
             "attribution": result.model_dump(mode="json"),
@@ -239,6 +296,8 @@ def build_agent_graph(
                         "taxonomy": result.taxonomy,
                         "cause": result.cause,
                         "confidence": result.confidence,
+                        "fault_type": result.fault_type,
+                        "t_star": result.t_star,
                     },
                 )
             ],
@@ -248,34 +307,75 @@ def build_agent_graph(
         attribution = AttributionResult.model_validate(state["attribution"])
         execution = ExecutionResult.model_validate(state["execution"])
         before = state["skill_content"]
+
+        # ---- Skill-Adaptor Modification stage --------------------------------
+        # Reconstruct a lightweight LocalizedFault from the AttributionResult
+        # so the Generator / Reviser modules can operate uniformly.
+        from .adaptor import LocalizedFault as _LocalizedFault
+        from .adaptor import SkillAttribution as _SkillAttribution
+        try:
+            fault_type = FaultType(attribution.fault_type)
+        except ValueError:
+            fault_type = FaultType.UNKNOWN
+        localized = _LocalizedFault(
+            fault_type=fault_type,
+            t_star=attribution.t_star if attribution.t_star is not None else 0,
+            fault_chain=list(attribution.fault_chain),
+            improvement_principle=attribution.improvement_principle,
+            wrong_action="",
+            observation=attribution.explanation,
+            steps=[],
+            reason=attribution.explanation,
+        )
+        head_attribution = _SkillAttribution(
+            skill_id=state["skill_id"],
+            weight=float(attribution.responsibility),
+            reason=attribution.explanation,
+            action=(
+                "generate"
+                if attribution.action == "patch_loader"
+                else "revise"
+            ),
+        )
+
+        # -- Route to Generator (skill_missing / loader) or Reviser --
         if attribution.action == "patch_loader":
-            instruction = (
-                "\nAlways install and load this Skill before executing the target task."
+            after = generator.generate(
+                localized,
+                current_body=before,
+                task=state.get("task", ""),
+                skill_id=state["skill_id"],
             )
             kind = "loader_patch"
-        elif execution.executor == "codex-sdk-live":
-            failed_checks = [
-                item
-                for item in execution.assertions
-                if not item.passed and item.source in {"skill", "system"}
-            ]
-            requirements = "\n".join(
-                f"- {item.id}: {item.detail or 'Satisfy this check.'}"
-                for item in failed_checks
+            repair_mode = "generate"
+            revision_type = "loader_hint"
+            principle = (
+                attribution.improvement_principle
+                or "Always install and load this Skill before executing the task."
             )
-            instruction = (
-                "\n\n## Verification addendum\n"
-                "The following requirements must be explicit in the result or satisfy the verifier:\n"
-                f"{requirements}"
-            )
-            kind = "skill_patch"
         else:
-            instruction = (
-                "\nProcess the complete input, not only preview rows, before computing "
-                "or verifying the final result."
+            after, revision_type, note = reviser.revise(
+                localized,
+                current_body=before,
+                attribution=head_attribution,
+                execution=execution,
             )
             kind = "skill_patch"
-        after = before if instruction.strip() in before else f"{before.rstrip()}{instruction}"
+            repair_mode = "revise"
+            principle = attribution.improvement_principle or note
+
+        # Preserve legacy default patch text so downstream fixtures / benchmarks
+        # that inspect the diff keep working. When the Reviser did not touch
+        # the body (e.g. principle was empty), fall back to the original
+        # phrasing shipped in the initial release.
+        if after == before:
+            fallback = (
+                "\nProcess the complete input, not only preview rows, before "
+                "computing or verifying the final result."
+            )
+            after = f"{before.rstrip()}{fallback}"
+            revision_type = revision_type or "clarify_procedure"
+
         patch = RepairPatch(
             patch_id=f"patch-{uuid4().hex[:10]}",
             kind=kind,
@@ -286,6 +386,9 @@ def build_agent_graph(
             after=after,
             evidence_refs=attribution.evidence_refs,
             rollback_ref=f"{state['skill_id']}@{state['skill_version']}",
+            repair_mode=repair_mode,
+            revision_type=revision_type,
+            principle=principle,
         )
         return {
             "attempt": state["attempt"] + 1,
@@ -301,6 +404,8 @@ def build_agent_graph(
                         "base_version": patch.base_version,
                         "next_version": patch.next_version,
                         "rollback_ref": patch.rollback_ref,
+                        "repair_mode": patch.repair_mode,
+                        "revision_type": patch.revision_type,
                     },
                 )
             ],
@@ -309,18 +414,22 @@ def build_agent_graph(
     def verify(state: AgentState) -> dict[str, Any]:
         baseline = ExecutionResult.model_validate(state["baseline_execution"])
         candidate = ExecutionResult.model_validate(state["execution"])
-        delta = candidate.pass_rate - baseline.pass_rate
-        adopted = (
-            candidate.passed
-            and delta > 0
-            and candidate.regression_rate == 0
-        )
+
+        # ---- Skill-Adaptor Qualification stage ------------------------------
+        # Centralise the adopt/reject decision + regression guard behind the
+        # ``Qualifier`` module so future multi-sample validation can reuse
+        # the exact same logic.
+        verdict = qualifier.qualify(baseline=baseline, candidate=candidate)
+        delta = verdict.delta_pass_rate
+        adopted = verdict.adopt
         reasons = [
             f"Pass rate changed by {delta:+.1%}.",
             f"Regression rate is {candidate.regression_rate:.1%}.",
         ]
         if not candidate.passed:
             reasons.append("Candidate verification still has failing checks.")
+        if verdict.regression_detected:
+            reasons.append("Regression above tolerance detected.")
         result = VerificationResult(
             decision="ADOPT" if adopted else "REJECT",
             baseline_pass_rate=baseline.pass_rate,
@@ -328,6 +437,10 @@ def build_agent_graph(
             pass_rate_delta=delta,
             regression_rate=candidate.regression_rate,
             reasons=reasons,
+            delta_avg_score=verdict.delta_avg_score,
+            regression_detected=verdict.regression_detected,
+            sample_size=verdict.sample_size,
+            qualifier_reason=verdict.reason,
         )
         return {
             "verification": result.model_dump(mode="json"),
@@ -339,6 +452,8 @@ def build_agent_graph(
                     metadata={
                         "pass_rate_delta": result.pass_rate_delta,
                         "regression_rate": result.regression_rate,
+                        "regression_detected": result.regression_detected,
+                        "sample_size": result.sample_size,
                     },
                 )
             ],
