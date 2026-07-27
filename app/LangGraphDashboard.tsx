@@ -309,12 +309,76 @@ export default function LangGraphDashboard() {
             <strong>{snapshot?.attribution?.cause ?? "PENDING"}</strong>
           </div>
           <h3>{snapshot?.attribution?.taxonomy ?? "等待失败证据"}</h3>
-          <p>
-            {snapshot?.attribution?.explanation ??
-              "归因节点会区分 Skill、loader、tool 与 platform 责任。"}
-          </p>
+          {snapshot?.attribution?.agent_source === "llm" &&
+          snapshot.attribution.agent_conclusion ? (
+            <div
+              style={{
+                border: "1px solid rgba(80, 220, 140, 0.35)",
+                background: "rgba(80, 220, 140, 0.08)",
+                borderRadius: 8,
+                padding: "10px 12px",
+                margin: "8px 0 12px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  letterSpacing: 0.6,
+                  color: "rgba(120, 220, 160, 0.95)",
+                  marginBottom: 4,
+                }}
+              >
+                🤖 AI 归因结论 · DeepSeek
+              </div>
+              <p style={{ margin: 0, lineHeight: 1.55 }}>
+                {snapshot.attribution.agent_conclusion}
+              </p>
+              {snapshot.attribution.agent_reason ? (
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 12,
+                    opacity: 0.75,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  归因理由：{snapshot.attribution.agent_reason}
+                </p>
+              ) : null}
+              {snapshot.attribution.fault_type &&
+              snapshot.attribution.fault_type !== "unknown" ? (
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 11,
+                    opacity: 0.6,
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  fault_type = {snapshot.attribution.fault_type}
+                  {typeof snapshot.attribution.t_star === "number"
+                    ? ` · t* = ${snapshot.attribution.t_star}`
+                    : ""}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p>
+              {snapshot?.attribution?.explanation ??
+                "归因节点会区分 Skill、loader、tool 与 platform 责任。"}
+            </p>
+          )}
+          {snapshot?.attribution?.agent_source === "rule-based" &&
+          snapshot?.attribution?.explanation ? (
+            <p style={{ opacity: 0.7, fontSize: 12 }}>
+              规则化摘要：{snapshot.attribution.explanation}
+            </p>
+          ) : null}
           <footer>
             confidence {percent(snapshot?.attribution?.confidence)}
+            {snapshot?.attribution?.agent_source
+              ? ` · source=${snapshot.attribution.agent_source}`
+              : ""}
           </footer>
         </article>
 

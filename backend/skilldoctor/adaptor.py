@@ -87,6 +87,10 @@ class LocalizedFault:
     observation: str = ""
     steps: List[TrajectoryStep] = field(default_factory=list)
     reason: str = ""
+    # Provenance of this localization: "llm" when DeepSeek/OpenAI produced
+    # it, "rule-based" for the deterministic fallback, "none" when the
+    # Localizer decided the run was fully healthy.
+    source: str = "rule-based"
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -239,11 +243,13 @@ class Localizer:
         *,
         task: str = "",
         current_skill_id: str = "",
+        force_llm: bool = False,
     ) -> Optional[LocalizedFault]:
-        if execution.passed and not any(
-            (not a.passed) for a in execution.assertions
-        ):
-            return None
+        if not force_llm:
+            if execution.passed and not any(
+                (not a.passed) for a in execution.assertions
+            ):
+                return None
 
         steps = trajectory_from_execution(execution)
         if not steps:
@@ -252,6 +258,17 @@ class Localizer:
         if self.llm_client is not None:
             fault = self._localize_with_llm(execution, steps, task)
             if fault is not None:
+                try:
+                    import logging
+
+                    logging.getLogger("skilldoctor.adaptor").info(
+                        "Localizer: DeepSeek invoked → fault_type=%s t*=%s conclusion=%r",
+                        fault.fault_type.value,
+                        fault.t_star,
+                        (fault.improvement_principle or "")[:160],
+                    )
+                except Exception:
+                    pass
                 return fault
         return self._localize_rule_based(execution, steps, current_skill_id)
 
@@ -397,6 +414,7 @@ class Localizer:
                 observation=failing_step.detail,
                 steps=steps,
                 reason=reason,
+                source="llm",
             )
         except Exception:  # pragma: no cover - LLM parsing is best-effort
             return None

@@ -101,6 +101,14 @@ export type LangGraphState = {
       | "split_non_skill";
     evidence_refs: string[];
     explanation: string;
+    fault_type?: "skill_wrong" | "skill_missing" | "reasoning_wrong" | "unknown";
+    t_star?: number | null;
+    fault_chain?: number[];
+    improvement_principle?: string;
+    skill_attributions?: Array<Record<string, unknown>>;
+    agent_conclusion?: string;
+    agent_reason?: string;
+    agent_source?: "llm" | "rule-based" | "none";
   };
   repair_patch?: {
     patch_id: string;

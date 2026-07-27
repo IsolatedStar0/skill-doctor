@@ -91,6 +91,10 @@ class AttributionResult(BaseModel):
     fault_chain: list[int] = Field(default_factory=list)
     improvement_principle: str = ""
     skill_attributions: list[dict[str, Any]] = Field(default_factory=list)
+    # -- LLM-authored conclusion (empty when Localizer fell back to rules)
+    agent_conclusion: str = ""
+    agent_reason: str = ""
+    agent_source: Literal["llm", "rule-based", "none"] = "none"
 
 
 class RepairPatch(BaseModel):
