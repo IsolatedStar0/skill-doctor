@@ -32,6 +32,7 @@ from .observability import (
     create_observability_exporter,
 )
 from .registry import RunRegistry
+from .storage import FileStorageBackend, StorageBackend
 from .workers import (
     BenchmarkReplayWorker,
     CodexExecutionWorker,
@@ -49,21 +50,56 @@ class RunService:
             [str, RunRequest],
             LangSmithRunExporter,
         ] = create_observability_exporter,
+        storage: StorageBackend | None = None,
     ) -> None:
         self.project_root = (
             project_root
             or Path(__file__).resolve().parents[2]
         ).resolve()
-        self.report_directory = self.project_root / "reports" / "langgraph"
-        self.diagnostic_case_directory = self.project_root / "diagnostic_cases"
-        self.candidate_skill_directory = self.project_root / "candidate_skills"
-        self.rejection_memory_directory = self.project_root / "rejection_memory"
+        self.storage = storage or FileStorageBackend(self.project_root)
         self.exporter_factory = exporter_factory
         # Build a shared DeepSeek LLM client once per service. Returns None
         # gracefully when DEEPSEEK_API_KEY / openai SDK is unavailable, in
         # which case Skill-Adaptor stages keep using their rule-based
         # deterministic fallbacks.
         self.adaptor_llm_client = build_deepseek_client()
+
+    @property
+    def report_directory(self) -> Path:
+        return self.storage.run_directory
+
+    @report_directory.setter
+    def report_directory(self, value: Path) -> None:
+        self.storage.run_directory = value
+        self.storage.benchmark_directory = (
+            value.parent / "benchmarks"
+            if value.name == "langgraph"
+            else value / "benchmarks"
+        )
+
+    @property
+    def diagnostic_case_directory(self) -> Path:
+        return self.storage.diagnostic_case_directory
+
+    @diagnostic_case_directory.setter
+    def diagnostic_case_directory(self, value: Path) -> None:
+        self.storage.diagnostic_case_directory = value
+
+    @property
+    def candidate_skill_directory(self) -> Path:
+        return self.storage.candidate_skill_directory
+
+    @candidate_skill_directory.setter
+    def candidate_skill_directory(self, value: Path) -> None:
+        self.storage.candidate_skill_directory = value
+
+    @property
+    def rejection_memory_directory(self) -> Path:
+        return self.storage.rejection_memory_directory
+
+    @rejection_memory_directory.setter
+    def rejection_memory_directory(self, value: Path) -> None:
+        self.storage.rejection_memory_directory = value
 
     def _worker(self, request: RunRequest) -> ExecutionWorker:
         if request.executor == "codex":
@@ -181,14 +217,10 @@ class RunService:
     def load_saved_diagnostic_cases(self) -> list[DiagnosticCaseRequest]:
         """Load locally persisted real-trace regression cases."""
 
-        if not self.diagnostic_case_directory.is_dir():
-            return []
-        cases: list[DiagnosticCaseRequest] = []
-        for path in sorted(self.diagnostic_case_directory.glob("*.json")):
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            case = DiagnosticCaseRequest.model_validate(payload)
-            cases.append(case)
-        return cases
+        return [
+            DiagnosticCaseRequest.model_validate(payload)
+            for payload in self.storage.list_diagnostic_cases()
+        ]
 
     def save_diagnostic_case_from_run(
         self,
@@ -233,15 +265,13 @@ class RunService:
                 "expectation": expectation.model_dump(mode="json"),
             }
         )
-        self.diagnostic_case_directory.mkdir(parents=True, exist_ok=True)
-        path = self.diagnostic_case_directory / f"{case.case_id}.json"
-        path.write_text(
-            f"{json.dumps(case.model_dump(mode='json'), ensure_ascii=False, indent=2)}\n",
-            encoding="utf-8",
+        path = self.storage.save_diagnostic_case(
+            case.case_id,
+            case.model_dump(mode="json"),
         )
         return {
             "status": "saved",
-            "path": str(path.relative_to(self.project_root)),
+            "path": path,
             "case": case.model_dump(mode="json"),
         }
 
@@ -360,15 +390,10 @@ class RunService:
             "can_apply": False,
             "can_apply_reason": "候选 Skill 仅用于验证，不会覆盖生产 Skill；通过验证后再人工采纳。",
         }
-        self.candidate_skill_directory.mkdir(parents=True, exist_ok=True)
-        path = self._candidate_path(candidate_id)
-        path.write_text(
-            f"{json.dumps(candidate, ensure_ascii=False, indent=2)}\n",
-            encoding="utf-8",
-        )
+        path = self.storage.save_candidate_skill(candidate_id, candidate)
         return {
             "status": "created",
-            "path": str(path.relative_to(self.project_root)),
+            "path": path,
             "candidate": candidate,
         }
 
@@ -485,11 +510,7 @@ class RunService:
             report["rejection_memory"],
         )
         candidate["last_validation"] = report
-        path = self._candidate_path(candidate_id)
-        path.write_text(
-            f"{json.dumps(candidate, ensure_ascii=False, indent=2)}\n",
-            encoding="utf-8",
-        )
+        self.storage.save_candidate_skill(candidate_id, candidate)
         return report
 
     def list_rejection_history(
@@ -881,15 +902,7 @@ class RunService:
         return "\n".join(lines).strip() + "\n"
 
     def _load_rejection_history(self, skill_id: str | None = None) -> list[dict[str, Any]]:
-        if not self.rejection_memory_directory.is_dir():
-            return []
-        records: list[dict[str, Any]] = []
-        for path in sorted(self.rejection_memory_directory.glob("*.json")):
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if skill_id and payload.get("skill_id") != skill_id:
-                continue
-            records.append(payload)
-        return records
+        return self.storage.list_rejection_memory(skill_id)
 
     def _matching_rejection_history(
         self,
@@ -1001,15 +1014,10 @@ class RunService:
             "patch_sha256": self._text_sha256(str(candidate.get("skill_content_after") or "")),
             "patch_summary": (candidate.get("suggested_patch") or {}).get("summary", ""),
         }
-        self.rejection_memory_directory.mkdir(parents=True, exist_ok=True)
-        path = self.rejection_memory_directory / f"{rejection_id}.json"
-        path.write_text(
-            f"{json.dumps(record, ensure_ascii=False, indent=2)}\n",
-            encoding="utf-8",
-        )
+        path = self.storage.save_rejection_memory(rejection_id, record)
         return {
             "rejection_id": rejection_id,
-            "path": str(path.relative_to(self.project_root)),
+            "path": path,
             "failed_checks": failed_checks,
         }
 
@@ -1023,10 +1031,8 @@ class RunService:
         return self.candidate_skill_directory / f"{candidate_id}.json"
 
     def _load_candidate_skill(self, candidate_id: str) -> dict[str, Any]:
-        path = self._candidate_path(candidate_id)
-        if not path.is_file():
-            raise FileNotFoundError(candidate_id)
-        return json.loads(path.read_text(encoding="utf-8"))
+        self._candidate_path(candidate_id)
+        return self.storage.get_candidate_skill(candidate_id)
 
     @staticmethod
     def _candidate_version(base_version: str) -> str:
@@ -1454,9 +1460,10 @@ class RunService:
     def get(self, run_id: str) -> dict[str, Any]:
         if not run_id.startswith("lg-") or not run_id[3:].isalnum():
             raise ValueError("Invalid run id.")
-        path = self.report_directory / f"{run_id}.json"
-        if path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            return self.storage.get_run(run_id)
+        except FileNotFoundError:
+            pass
         return self.registry.get(run_id)
 
     def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -1467,12 +1474,7 @@ class RunService:
         return RunRegistry(self.report_directory / ".registry")
 
     def _save(self, result: dict[str, Any]) -> None:
-        self.report_directory.mkdir(parents=True, exist_ok=True)
-        path = self.report_directory / f"{result['run_id']}.json"
-        path.write_text(
-            f"{json.dumps(result, ensure_ascii=False, indent=2)}\n",
-            encoding="utf-8",
-        )
+        self.storage.save_run(result)
 
 
 def _default_diagnostic_cases() -> list[DiagnosticCaseRequest]:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
@@ -164,9 +163,10 @@ class BenchmarkService:
     def get(self, benchmark_id: str) -> dict[str, Any]:
         if not benchmark_id.startswith("bm-") or not benchmark_id[3:].isalnum():
             raise ValueError("Invalid benchmark id.")
-        path = self.report_directory / f"{benchmark_id}.json"
-        if path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            return self.run_service.storage.get_benchmark(benchmark_id)
+        except FileNotFoundError:
+            pass
         return self.run_service.registry.get(benchmark_id)
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -177,16 +177,12 @@ class BenchmarkService:
         ][:limit]
 
     def _publish(self, state: dict[str, Any]) -> dict[str, Any]:
-        snapshot = json.loads(json.dumps(state))
+        snapshot = self.run_service.storage.snapshot(state)
         self.run_service.registry.publish(snapshot)
         return snapshot
 
     def _save(self, state: dict[str, Any]) -> None:
-        self.report_directory.mkdir(parents=True, exist_ok=True)
-        (self.report_directory / f"{state['run_id']}.json").write_text(
-            f"{json.dumps(state, ensure_ascii=False, indent=2)}\n",
-            encoding="utf-8",
-        )
+        self.run_service.storage.save_benchmark(state)
 
     @staticmethod
     def _event(

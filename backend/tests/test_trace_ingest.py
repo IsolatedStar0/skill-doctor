@@ -11,6 +11,7 @@ from backend.skilldoctor.models import (
     TraceIngestRequest,
 )
 from backend.skilldoctor.service import RunService
+from backend.skilldoctor.storage import FileStorageBackend
 from http.server import ThreadingHTTPServer
 
 
@@ -460,6 +461,25 @@ def test_save_run_as_diagnostic_case_and_loads_in_suite(tmp_path: Path) -> None:
     assert report["summary"]["total"] == 5
     assert report["summary"]["saved_cases"] == 1
     assert any(item["source"] == "saved_run" for item in report["cases"])
+
+
+def test_file_storage_backend_persists_runtime_assets(tmp_path: Path) -> None:
+    storage = FileStorageBackend(tmp_path)
+    service = RunService(PROJECT_ROOT, storage=storage)
+    service.adaptor_llm_client = None
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    saved = service.save_diagnostic_case_from_run(state["run_id"])
+    created = service.create_candidate_skill_from_run(state["run_id"])
+
+    assert storage.get_run(state["run_id"])["run_id"] == state["run_id"]
+    assert saved["path"].startswith("diagnostic_cases/")
+    assert len(storage.list_diagnostic_cases()) == 1
+    assert storage.get_candidate_skill(
+        created["candidate"]["candidate_id"]
+    )["candidate_id"] == created["candidate"]["candidate_id"]
 
 
 def test_repair_preview_from_attributed_trace_run(tmp_path: Path) -> None:
