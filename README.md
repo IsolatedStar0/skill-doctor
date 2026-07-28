@@ -1,24 +1,37 @@
-# Skill Doctor Demo
+# Skill Doctor — Agent Skill 自愈诊断与修复系统
 
-Skill Doctor 是一个完全离线、确定性可复现的 Agent Skill 可观测、可归因、可修复、可验证 Demo。
+[![CI](https://github.com/IsolatedStar0/skill-doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/IsolatedStar0/skill-doctor/actions/workflows/ci.yml)
 
-当前版本内置三条可切换故障链：
+Skill Doctor 是一个面向 **Agent Skill 可靠性** 的自愈系统 Demo：它把失败 Trace 转换成结构化证据，判断失败到底来自 Skill 内容缺口、加载遗漏还是平台/工具边界，再生成候选修复并通过回归验证决定是否采纳。
 
-1. `Content Gap`：Skill 指令缺少必要约束，生成最小化、可回滚的 Skill patch。
-2. `Loading Miss`：Skill 选择正确但依赖资源未加载，只修复 loader，禁止改写 Skill。
-3. `Non-Skill Cause`：外部服务权限失败，路由到 platform owner，禁止改写 Skill。
+这个项目的目标不是简单“自动改 prompt”，而是展示一个更接近真实 Agent 工程化场景的闭环：**可观测、可归因、可修复、可验证、可量化**。
 
-每个 Trace step 同时记录：
+## 项目亮点
 
-- 开始时间、持续时间、事件类型和模型
-- input / output token
-- cached input token
-- reasoning token
-- evidence ref 与故障状态
+- **多阶段 Agent Workflow**：基于 LangGraph 将失败处理拆成 Trace Ingest、Evidence Builder、Attribution Agent、Repair Planner、Candidate Generator、Regression Verifier、Reject Memory 七个阶段。
+- **安全修复边界**：只有高置信度 Skill/loader 归因才会进入修复；平台异常、工具问题和非 Skill 原因默认拒绝修改 Skill。
+- **Scenario Catalog**：内置 `Content Gap`、`Loading Miss`、`Platform Error` 等典型 Agent Skill 失败模式，支持前端动态切换与后端确定性复现。
+- **Benchmark Summary**：自动汇总配对评测快照，展示修复成功率、平均 pass-rate 提升、token 开销、回归风险等可写进简历的量化指标。
+- **CI 持续验证**：GitHub Actions 自动执行前端构建、Node 单测、Python 后端测试和 benchmark summary 生成，保证自愈链路持续可验证。
+- **可视化 Demo**：前端提供 Trace、Token、故障归因、修复验证、配对评测、评测指标和 Agent 架构页面，方便面试现场讲解。
 
-界面中的 `Trace 过程` 会显示完整执行流和每步消耗，`Token 面板` 会显示总量、缓存命中率、热点步骤、逐步堆叠分解和累计消耗曲线。缓存输入是 input 的子集，reasoning token 是 output 的子集，总量只按 `input + output` 计算，避免重复计数。
+## 在线 Demo
 
-完整闭环：
+在线访问：<https://isolatedstar0.github.io/skill-doctor/>
+
+当前项目通过 GitHub Pages 自动部署前端静态 Demo。静态 Demo 使用内置离线数据，不依赖外部 API；真实 Codex/LangGraph live run 需要本机或服务端启动后端 control plane。
+
+## 核心问题
+
+Agent 使用 Skill 时，失败不一定都应该归咎于 Skill 本身：
+
+1. **Content Gap**：Skill 指令缺少必要约束，应该生成最小化、可回滚的 Skill patch。
+2. **Loading Miss**：Skill 选择正确但依赖资源未加载，应该修复 loader，禁止改写 Skill。
+3. **Platform Error / Non-Skill Cause**：外部服务、权限或网络失败，应该路由到平台 owner，禁止改写 Skill。
+
+Skill Doctor 的核心价值是先归因再修复，避免“所有失败都自动改 Skill”导致错误修复和回归。
+
+## 架构闭环
 
 ```text
 失败 Trace
@@ -30,6 +43,28 @@ Skill Doctor 是一个完全离线、确定性可复现的 Agent Skill 可观测
 → replay + regression / owner routing
 → ADOPT / ROUTE / REJECT
 ```
+
+前端 `Agent 架构` 页面会将完整链路展开为七阶段：
+
+```text
+Trace Ingest
+→ Evidence Builder
+→ Attribution Agent
+→ Repair Planner
+→ Candidate Generator
+→ Regression Verifier
+→ Reject Memory + Storage
+```
+
+每个 Trace step 同时记录开始时间、持续时间、事件类型、模型、input/output token、cached input token、reasoning token、evidence ref 与故障状态。缓存输入是 input 的子集，reasoning token 是 output 的子集，总量只按 `input + output` 计算，避免重复计数。
+
+## 技术栈
+
+- **Frontend**：React 19、TypeScript、Vinext/Vite、响应式 Dashboard
+- **Agent Orchestration**：Python、LangGraph、确定性 fixture worker、Codex SDK worker
+- **Storage**：File Storage、SQLite Backend，可扩展到 Postgres/Cloud Storage
+- **Evaluation**：paired benchmark、Benchmark Summary、regression gate、token overhead 统计
+- **Quality**：GitHub Actions、Node test runner、pytest、typed TypeScript
 
 ## 环境
 
@@ -290,6 +325,39 @@ npm run bench:paired -- --resume reports/paired/<run-id>
 后一种成绩需要拉取固定 commit、让 Agent 修改代码，再运行数据集提供的完整
 pytest suite。
 
+## Benchmark Summary / 量化指标
+
+项目会从 `reports/benchmarks/*.json` 自动生成 `reports/evaluation-summary.json`，并在前端 `评测指标` 页面展示：
+
+- `repairSuccessRate`：配对实验中 treatment 明显优于 control 的比例。
+- `averagePassRateDelta`：加载 Skill 后平均 pass-rate 提升。
+- `averageTokenOverheadRate`：Skill 带来的 token 成本增量。
+- `regressionDetectionRate`：验证门禁对回归 pair 的覆盖情况。
+- `scenarioBreakdown`：按场景拆解的修复收益。
+
+生成命令：
+
+```bash
+npm run bench:summary
+```
+
+这部分用于回答面试中的量化问题：系统不仅能展示一次修复，还能用固定指标证明 Agent Skill 的收益、成本和安全边界。
+
+## CI / 持续验证
+
+GitHub Actions 会在 push 和 PR 时执行完整验证：
+
+```text
+npm ci
+python -m pip install -e "backend[dev,api,observability]"
+npm run build
+node --experimental-strip-types --test "tests/*.test.mjs"
+python -m pytest backend/tests -q --basetemp=.pytest-tmp
+npm run bench:summary
+```
+
+CI 覆盖前端构建、TypeScript/Node 逻辑、Python LangGraph control plane、API/存储测试和评测报告生成，确保 demo 页面、后端自愈链路和量化指标可以持续复现。
+
 ## 启动
 
 ```bash
@@ -321,7 +389,7 @@ npm test
 
 ```text
 app/
-  DemoApp.tsx        三场景、四视图的交互控制台
+  DemoApp.tsx        多场景、多视图的交互控制台
   globals.css        响应式界面样式
 backend/
   skilldoctor/       LangGraph 状态图、worker、CLI、API 与运行存储
@@ -330,11 +398,13 @@ lib/
   demo-engine.ts     Trace、规则归因、修复隔离和验证引擎
   attribution-engine.ts  有版本和优先级证明的 7 类归因规则
   benchmark-engine.ts  配对指标、token overhead 和回归率计算
+  benchmark-summary.ts  多次 benchmark 快照的汇总指标生成
   codex-jsonl-adapter.ts  Codex CLI JSONL 到 Trace 1.1 的无损边界
   trace-adapter.ts   版本化 JSON Trace 协议与运行时校验
   trace-recorder.ts  provider-neutral Agent 插桩与 usage 归一化
 scripts/
   analyze-trace.mjs  外部 Trace CLI 分析入口
+  generate-benchmark-summary.mjs  Benchmark Summary 报告生成入口
   import-codex-jsonl.mjs  Codex JSONL 转换入口
   run-paired-codex-benchmark.mjs  Codex SDK 配对执行与 Evidence Snapshot
   run-codex-skill-smoke.mjs  三个开源 Skill 的静态/live probe
@@ -352,3 +422,15 @@ tests/
 ## 演示重点
 
 面试时先运行“内容缺口”，展示完整的 Skill patch 与验证门禁；再切换到“加载遗漏”和“平台异常”，强调系统不会把所有失败都归咎于 Skill。后两条路径中的 `NO_SKILL_MUTATION` 是这个 Demo 的安全边界，也是相对普通自动改 prompt 项目的主要差异。
+
+推荐 3 分钟讲解顺序：
+
+1. **问题背景**：Agent Skill 失败不一定是 Skill 内容错，错误归因会导致错误修复。
+2. **系统方案**：用 Trace → Evidence → Attribution → Repair → Verify → Memory 的闭环先归因再修复。
+3. **安全边界**：Content Gap 才 patch Skill，Loading Miss patch loader，Platform Error 只路由不改 Skill。
+4. **量化结果**：用 Benchmark Summary 展示 pass-rate 提升、修复成功率、token 成本和回归风险。
+5. **工程化**：CI 自动跑前端构建、Node 单测、Python 后端测试和评测报告生成。
+
+## 简历表述参考
+
+> Skill Doctor：面向 Agent Skill 的自愈诊断与修复系统。基于 LangGraph 设计 Trace Ingest、Evidence Builder、Attribution Agent、Repair Planner、Candidate Generator、Regression Verifier、Reject Memory 七阶段工作流，实现 Agent 执行失败的证据冻结、故障归因、候选修复、回归验证与持久化管理。构建 Scenario Catalog 覆盖 Content Gap、Loading Miss、Platform Error 等典型失败模式，并实现 Benchmark Summary 自动汇总修复成功率、pass-rate 提升、token 开销和回归检测指标；接入 GitHub Actions CI 自动执行前端构建、Node 单测、Python 后端测试与评测报告生成。

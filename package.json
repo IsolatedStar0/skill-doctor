@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:static": "vite build --config vite.static.config.ts",
     "start": "vinext start",
     "test": "npm run test:node && npm run test:python",
     "test:node": "npm run build && node --experimental-strip-types --test \"tests/*.test.mjs\"",
