@@ -1658,6 +1658,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-top: 1px solid var(--line);
 }
 .graph-event dl div { display: grid; gap: 4px; }
+.graph-event dl .event-token-detail {
+  flex-basis: 100%;
+  color: #355d43;
+}
 .graph-event dt {
   color: var(--muted);
   font: 10px/1 var(--mono);

@@ -215,6 +215,88 @@ class UploadedTraceWorker:
         text = self._stringify(blob, limit=4000).lower()
         return any(keyword in text for keyword in self._ERROR_KEYWORDS)
 
+    @staticmethod
+    def _token_int(*values: Any) -> int:
+        for value in values:
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                return max(0, int(value))
+            if isinstance(value, str) and value.strip().isdigit():
+                return max(0, int(value.strip()))
+        return 0
+
+    @classmethod
+    def _normalize_usage(cls, raw: Any) -> dict[str, int] | None:
+        """Normalize common provider/Aime token usage shapes to TokenUsage."""
+
+        if not isinstance(raw, dict):
+            return None
+        input_details = raw.get("input_tokens_details") or {}
+        output_details = raw.get("output_tokens_details") or {}
+        if not isinstance(input_details, dict):
+            input_details = {}
+        if not isinstance(output_details, dict):
+            output_details = {}
+        usage = {
+            "input_tokens": cls._token_int(
+                raw.get("input_tokens"),
+                raw.get("inputTokens"),
+                raw.get("prompt_tokens"),
+                raw.get("promptTokens"),
+            ),
+            "output_tokens": cls._token_int(
+                raw.get("output_tokens"),
+                raw.get("outputTokens"),
+                raw.get("completion_tokens"),
+                raw.get("completionTokens"),
+            ),
+            "cached_input_tokens": cls._token_int(
+                raw.get("cached_input_tokens"),
+                raw.get("cachedInputTokens"),
+                raw.get("cache_read_input_tokens"),
+                raw.get("cacheReadInputTokens"),
+                input_details.get("cached_tokens"),
+            ),
+            "reasoning_tokens": cls._token_int(
+                raw.get("reasoning_tokens"),
+                raw.get("reasoningTokens"),
+                raw.get("reasoning_output_tokens"),
+                raw.get("reasoningOutputTokens"),
+                output_details.get("reasoning_tokens"),
+            ),
+        }
+        return usage if any(usage.values()) else None
+
+    @classmethod
+    def _usage_from_record(cls, raw: dict[str, Any]) -> dict[str, int] | None:
+        for key in (
+            "usage",
+            "token_usage",
+            "tokenUsage",
+            "usage_metadata",
+            "usageMetadata",
+        ):
+            usage = cls._normalize_usage(raw.get(key))
+            if usage is not None:
+                return usage
+        return cls._normalize_usage(raw)
+
+    @staticmethod
+    def _sum_usage(events: list[dict[str, Any]]) -> TokenUsage:
+        totals = TokenUsage()
+        for event in events:
+            usage = event.get("usage") if isinstance(event, dict) else None
+            if not isinstance(usage, dict):
+                continue
+            totals.input_tokens += int(usage.get("input_tokens") or 0)
+            totals.output_tokens += int(usage.get("output_tokens") or 0)
+            totals.cached_input_tokens += int(usage.get("cached_input_tokens") or 0)
+            totals.reasoning_tokens += int(usage.get("reasoning_tokens") or 0)
+        return totals
+
     def _analyze_runtime_events(
         self,
         events: list[dict[str, Any]],
@@ -244,7 +326,7 @@ class UploadedTraceWorker:
                     "stage": stage,
                     "status": status_value,
                     "message": message,
-                    "usage": raw.get("usage"),
+                    "usage": self._usage_from_record(raw),
                     "metadata": metadata,
                 }
             )
@@ -481,6 +563,7 @@ class UploadedTraceWorker:
         normalized_events, event_assertions, event_findings = (
             self._analyze_runtime_events(runtime_events)
         )
+        runtime_usage = self._sum_usage(normalized_events)
         analysis_events.append(
             self._emit(
                 "agent.analyze.runtime_events",
@@ -488,11 +571,20 @@ class UploadedTraceWorker:
                     f"Inspected {len(normalized_events)} runtime event(s); "
                     f"failures={sum(1 for e in normalized_events if e['status'] == 'failed')}."
                 ),
+                usage=(
+                    runtime_usage.model_dump(mode="json")
+                    if runtime_usage.total_tokens
+                    else None
+                ),
                 metadata={
                     "count": len(normalized_events),
                     "failed": sum(
                         1 for e in normalized_events if e["status"] == "failed"
                     ),
+                    "input_tokens": runtime_usage.input_tokens,
+                    "output_tokens": runtime_usage.output_tokens,
+                    "cached_input_tokens": runtime_usage.cached_input_tokens,
+                    "reasoning_tokens": runtime_usage.reasoning_tokens,
                 },
             )
         )
@@ -572,6 +664,19 @@ class UploadedTraceWorker:
             task_kind = prior.task_kind
             duration_ms = prior.duration_ms
             usage = prior.usage
+            if runtime_usage.total_tokens:
+                usage = TokenUsage(
+                    input_tokens=max(usage.input_tokens, runtime_usage.input_tokens),
+                    output_tokens=max(usage.output_tokens, runtime_usage.output_tokens),
+                    cached_input_tokens=max(
+                        usage.cached_input_tokens,
+                        runtime_usage.cached_input_tokens,
+                    ),
+                    reasoning_tokens=max(
+                        usage.reasoning_tokens,
+                        runtime_usage.reasoning_tokens,
+                    ),
+                )
             artifacts = dict(prior.artifacts)
             error = prior.error
         else:
@@ -581,7 +686,7 @@ class UploadedTraceWorker:
             resolved_condition = condition or "standard"
             task_kind = "knowledge-probe"
             duration_ms = 0
-            usage = TokenUsage()
+            usage = runtime_usage
             artifacts = {}
             error = None
             if not runtime_events and not tool_calls and not model_messages:

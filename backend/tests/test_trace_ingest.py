@@ -40,6 +40,12 @@ def _payload() -> str:
                         "stage": "aime.trace",
                         "status": "completed",
                         "message": "Trace imported from Aime.",
+                        "usage": {
+                            "inputTokens": 120,
+                            "outputTokens": 30,
+                            "cachedInputTokens": 40,
+                            "reasoningTokens": 8,
+                        },
                         "metadata": {"source": "aime"},
                     }
                 ],
@@ -158,6 +164,14 @@ def test_trace_ingest_runs_attribution_pipeline(
         stages = [event["stage"] for event in state["events"]]
         assert "agent.analyze" in stages
         assert "agent.analyze.summarize" in stages
+        event = next(item for item in state["events"] if item["stage"] == "aime.trace")
+        assert event["usage"] == {
+            "input_tokens": 120,
+            "output_tokens": 30,
+            "cached_input_tokens": 40,
+            "reasoning_tokens": 8,
+        }
+        assert state["execution"]["usage"]["input_tokens"] == 120
     finally:
         server.shutdown()
         server.server_close()

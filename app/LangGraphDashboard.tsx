@@ -83,6 +83,20 @@ function tokens(state: LangGraphState | null) {
   );
 }
 
+function tokenBreakdown(usage: LangGraphState["events"][number]["usage"]) {
+  if (!usage) return null;
+  return [
+    `输入 ${usage.input_tokens.toLocaleString("zh-CN")}`,
+    `输出 ${usage.output_tokens.toLocaleString("zh-CN")}`,
+    usage.cached_input_tokens
+      ? `缓存 ${usage.cached_input_tokens.toLocaleString("zh-CN")}`
+      : null,
+    usage.reasoning_tokens
+      ? `推理 ${usage.reasoning_tokens.toLocaleString("zh-CN")}`
+      : null,
+  ].filter(Boolean).join(" / ");
+}
+
 export default function LangGraphDashboard() {
   const [mode, setMode] = useState<RunMode>("fixture");
   const [uiStatus, setUiStatus] = useState<UiStatus>("idle");
@@ -496,6 +510,12 @@ export default function LangGraphDashboard() {
                         : "—"}
                     </dd>
                   </div>
+                  {event.usage ? (
+                    <div className="event-token-detail">
+                      <dt>Token 明细</dt>
+                      <dd>{tokenBreakdown(event.usage)}</dd>
+                    </div>
+                  ) : null}
                 </dl>
               </div>
             ))}
