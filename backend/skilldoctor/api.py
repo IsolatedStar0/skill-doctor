@@ -12,6 +12,8 @@ from fastapi.responses import StreamingResponse
 from .benchmark import BenchmarkService
 from .models import (
     BenchmarkRequest,
+    CandidateSkillRequest,
+    CandidateValidationRequest,
     DiagnosticSuiteRequest,
     RepairPreviewRequest,
     RepairVerificationRequest,
@@ -193,6 +195,34 @@ def create_repair_preview(run_id: str, request: RepairPreviewRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail="Run not found.") from error
+
+
+@app.post("/repairs/candidates/from-run/{run_id}")
+def create_candidate_skill(run_id: str, request: CandidateSkillRequest) -> dict:
+    try:
+        return service.create_candidate_skill_from_run(run_id, request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Run not found.") from error
+
+
+@app.post("/repairs/candidates/{candidate_id}/validate")
+def validate_candidate_skill(
+    candidate_id: str,
+    request: CandidateValidationRequest,
+) -> dict:
+    try:
+        return service.validate_candidate_skill(candidate_id, request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Candidate not found.") from error
+
+
+@app.get("/repairs/rejections/{skill_id}")
+def list_rejection_history(skill_id: str) -> dict:
+    return service.list_rejection_history(skill_id)
 
 
 @app.post("/repairs/verify")

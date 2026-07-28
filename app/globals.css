@@ -1453,6 +1453,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   background: rgba(233, 95, 69, .08);
 }
 .skill-content-status.missing strong { color: var(--danger); }
+.skill-content-status.warning {
+  border-color: rgba(198, 126, 46, .34);
+  background: rgba(198, 126, 46, .08);
+}
+.skill-content-status.warning strong { color: #8a5b1f; }
 .graph-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -1584,6 +1589,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .repair-verification-card p {
   color: var(--ink);
   font-size: 12px;
+}
+.reject-memory-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(198, 126, 46, .38);
+  border-radius: 12px;
+  background: rgba(198, 126, 46, .08);
+  color: #6f4b1d;
+  font: 11px/1.5 var(--mono);
+}
+.reject-memory-card strong { font-size: 12px; }
+.reject-memory-card ul {
+  padding-left: 16px;
+  list-style: disc;
+}
+.reject-memory-card li {
+  display: list-item;
+  color: #6f4b1d;
 }
 .graph-pass-pair.compact {
   margin: 0;

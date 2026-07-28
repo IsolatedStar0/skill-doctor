@@ -5,6 +5,7 @@ import queue
 import re
 import threading
 import time
+import hashlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -14,6 +15,8 @@ from .graph import build_agent_graph
 from .llm import build_deepseek_client
 from .models import (
     AgentState,
+    CandidateSkillRequest,
+    CandidateValidationRequest,
     DiagnosticCaseRequest,
     DiagnosticSuiteRequest,
     DiagnosticExpectation,
@@ -53,6 +56,8 @@ class RunService:
         ).resolve()
         self.report_directory = self.project_root / "reports" / "langgraph"
         self.diagnostic_case_directory = self.project_root / "diagnostic_cases"
+        self.candidate_skill_directory = self.project_root / "candidate_skills"
+        self.rejection_memory_directory = self.project_root / "rejection_memory"
         self.exporter_factory = exporter_factory
         # Build a shared DeepSeek LLM client once per service. Returns None
         # gracefully when DEEPSEEK_API_KEY / openai SDK is unavailable, in
@@ -303,6 +308,206 @@ class RunService:
             ),
         }
 
+    def create_candidate_skill_from_run(
+        self,
+        run_id: str,
+        request: CandidateSkillRequest | None = None,
+    ) -> dict[str, Any]:
+        """Persist a non-mutating candidate Skill revision from one run."""
+
+        options = request or CandidateSkillRequest()
+        state = self.get(run_id)
+        preview = self.create_repair_preview(
+            run_id,
+            RepairPreviewRequest(include_full_skill=options.include_full_skill),
+        )
+        before = state.get("skill_content") or preview["suggested_patch"].get("before", "")
+        after = preview["suggested_patch"].get("after", "")
+        rejection_memory = self._matching_rejection_history(
+            str(state.get("skill_id") or ""),
+            preview.get("attribution", {}),
+        )
+        if rejection_memory:
+            after = self._skill_with_rejection_constraints(after, rejection_memory)
+        if not after or after == before:
+            raise ValueError("Repair preview did not produce a candidate skill change.")
+        candidate_id = f"cand-{uuid4().hex[:12]}"
+        base_version = state.get("skill_version", "unknown")
+        candidate = {
+            "schema_version": "1.0",
+            "candidate_id": candidate_id,
+            "status": "candidate_only",
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "created_from_run_id": run_id,
+            "skill_id": state.get("skill_id"),
+            "base_version": base_version,
+            "candidate_version": self._candidate_version(base_version),
+            "repair_type": preview.get("repair_type"),
+            "risk": preview.get("risk"),
+            "note": options.note or "",
+            "diagnosis": preview.get("diagnosis", ""),
+            "principle": preview.get("principle", ""),
+            "attribution": preview.get("attribution", {}),
+            "skill_content_before": before,
+            "skill_content_after": after,
+            "suggested_patch": preview.get("suggested_patch", {}),
+            "verification_plan": preview.get("verification_plan", []),
+            "rejection_memory": {
+                "matched_count": len(rejection_memory),
+                "constraints": self._rejection_constraints(rejection_memory),
+                "matches": rejection_memory,
+            },
+            "can_apply": False,
+            "can_apply_reason": "候选 Skill 仅用于验证，不会覆盖生产 Skill；通过验证后再人工采纳。",
+        }
+        self.candidate_skill_directory.mkdir(parents=True, exist_ok=True)
+        path = self._candidate_path(candidate_id)
+        path.write_text(
+            f"{json.dumps(candidate, ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+        return {
+            "status": "created",
+            "path": str(path.relative_to(self.project_root)),
+            "candidate": candidate,
+        }
+
+    def validate_candidate_skill(
+        self,
+        candidate_id: str,
+        request: CandidateValidationRequest | None = None,
+    ) -> dict[str, Any]:
+        """Run a suite-level validation gate for a candidate Skill revision."""
+
+        options = request or CandidateValidationRequest()
+        candidate = self._load_candidate_skill(candidate_id)
+        base_cases = self._diagnostic_cases_for_validation(
+            include_default_cases=options.include_default_cases,
+            include_saved_cases=options.include_saved_cases,
+        )
+        baseline_report = self.run_diagnostic_suite(
+            DiagnosticSuiteRequest(
+                suite_id="candidate-baseline-suite",
+                name="Candidate Baseline Suite",
+                include_default_cases=False,
+                include_saved_cases=False,
+                cases=base_cases,
+            )
+        )
+        candidate_cases = self._candidate_diagnostic_cases(base_cases, candidate)
+        candidate_report = self.run_diagnostic_suite(
+            DiagnosticSuiteRequest(
+                suite_id="candidate-validation-suite",
+                name="Candidate Validation Suite",
+                include_default_cases=False,
+                include_saved_cases=False,
+                cases=candidate_cases,
+            )
+        )
+        baseline_by_id = {item["case_id"]: item for item in baseline_report["cases"]}
+        candidate_by_id = {item["case_id"]: item for item in candidate_report["cases"]}
+        fixed_cases = [
+            case_id
+            for case_id, item in candidate_by_id.items()
+            if not baseline_by_id.get(case_id, {}).get("passed", True) and item["passed"]
+        ]
+        regressed_cases = [
+            case_id
+            for case_id, item in candidate_by_id.items()
+            if baseline_by_id.get(case_id, {}).get("passed") and not item["passed"]
+        ]
+        baseline_pass_rate = baseline_report["summary"]["pass_rate"]
+        candidate_pass_rate = candidate_report["summary"]["pass_rate"]
+        pass_rate_delta = candidate_pass_rate - baseline_pass_rate
+        validation_rejection_matches = self._matching_rejection_history(
+            str(candidate.get("skill_id") or ""),
+            candidate.get("attribution", {}),
+            candidate,
+        )
+        checks = self._candidate_validation_checks(
+            candidate,
+            baseline_report,
+            candidate_report,
+            fixed_cases,
+            regressed_cases,
+            options.decision_policy,
+            validation_rejection_matches,
+        )
+        decision = "ADOPT" if all(item["passed"] for item in checks) else "REJECT"
+        reasons = self._candidate_validation_reasons(
+            decision,
+            checks,
+            fixed_cases,
+            regressed_cases,
+            pass_rate_delta,
+        )
+        report = {
+            "schema_version": "1.0",
+            "status": "validated",
+            "decision": decision,
+            "policy": options.decision_policy,
+            "candidate_id": candidate_id,
+            "skill_id": candidate.get("skill_id"),
+            "base_version": candidate.get("base_version"),
+            "candidate_version": candidate.get("candidate_version"),
+            "baseline": baseline_report["summary"],
+            "candidate": candidate_report["summary"],
+            "delta": {
+                "pass_rate_delta": pass_rate_delta,
+                "fixed_cases": fixed_cases,
+                "regressed_cases": regressed_cases,
+            },
+            "checks": checks,
+            "reasons": reasons,
+            "rejection_memory": {
+                "matched_count": len(validation_rejection_matches),
+                "constraints": (candidate.get("rejection_memory") or {}).get("constraints", []),
+                "matches": validation_rejection_matches,
+                "recorded": None,
+            },
+            "baseline_report": baseline_report,
+            "candidate_report": candidate_report,
+        }
+        if decision == "REJECT":
+            report["rejection_memory"]["recorded"] = self._record_rejection_history(
+                candidate,
+                report,
+                fixed_cases,
+                regressed_cases,
+            )
+        report["markdown"] = self._candidate_validation_markdown(
+            candidate,
+            decision,
+            checks,
+            reasons,
+            baseline_pass_rate,
+            candidate_pass_rate,
+            report["rejection_memory"],
+        )
+        candidate["last_validation"] = report
+        path = self._candidate_path(candidate_id)
+        path.write_text(
+            f"{json.dumps(candidate, ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+        return report
+
+    def list_rejection_history(
+        self,
+        skill_id: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Return persisted rejected candidate memories for review / reuse."""
+
+        records = self._load_rejection_history(skill_id)
+        records = sorted(records, key=lambda item: item.get("created_at", ""), reverse=True)
+        return {
+            "schema_version": "1.0",
+            "skill_id": skill_id,
+            "count": len(records),
+            "records": records[:limit],
+        }
+
     def verify_repair(
         self,
         request: RepairVerificationRequest,
@@ -509,6 +714,325 @@ class RunService:
             },
             "checks": checks,
         }
+
+    def _diagnostic_cases_for_validation(
+        self,
+        *,
+        include_default_cases: bool,
+        include_saved_cases: bool,
+    ) -> list[DiagnosticCaseRequest]:
+        return [
+            *(_default_diagnostic_cases() if include_default_cases else []),
+            *(self.load_saved_diagnostic_cases() if include_saved_cases else []),
+        ]
+
+    @staticmethod
+    def _candidate_diagnostic_cases(
+        cases: list[DiagnosticCaseRequest],
+        candidate: dict[str, Any],
+    ) -> list[DiagnosticCaseRequest]:
+        updated: list[DiagnosticCaseRequest] = []
+        skill_id = candidate.get("skill_id")
+        for case in cases:
+            trace = case.trace
+            if trace.skill_id != skill_id:
+                updated.append(case)
+                continue
+            updated_trace = trace.model_copy(
+                update={
+                    "skill_version": candidate.get("candidate_version")
+                    or trace.skill_version,
+                    "skill_content": candidate.get("skill_content_after")
+                    or trace.skill_content,
+                    "trace_metadata": {
+                        **trace.trace_metadata,
+                        "candidate_id": candidate.get("candidate_id"),
+                        "candidate_validation": True,
+                    },
+                },
+                deep=True,
+            )
+            updated.append(case.model_copy(update={"trace": updated_trace}, deep=True))
+        return updated
+
+    @staticmethod
+    def _candidate_validation_checks(
+        candidate: dict[str, Any],
+        baseline_report: dict[str, Any],
+        candidate_report: dict[str, Any],
+        fixed_cases: list[str],
+        regressed_cases: list[str],
+        policy: str,
+        rejection_matches: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        threshold = 0.0 if policy == "strict" else -0.05
+        baseline_pass_rate = baseline_report["summary"]["pass_rate"]
+        candidate_pass_rate = candidate_report["summary"]["pass_rate"]
+        source_case_id = str(candidate.get("created_from_run_id") or "")
+        source_related_fixed = bool(fixed_cases) or candidate_pass_rate >= baseline_pass_rate
+        exact_duplicates = [
+            item
+            for item in rejection_matches
+            if item.get("match_reason") == "exact_rejected_patch"
+        ]
+        return [
+            {
+                "name": "candidate_has_skill_change",
+                "label": "候选 Skill 内容存在变更",
+                "expected": True,
+                "actual": candidate.get("skill_content_before")
+                != candidate.get("skill_content_after"),
+                "passed": candidate.get("skill_content_before")
+                != candidate.get("skill_content_after"),
+            },
+            {
+                "name": "suite_pass_rate_not_worse",
+                "label": "候选套件通过率未低于 baseline",
+                "expected": f">= {baseline_pass_rate + threshold:.2f}",
+                "actual": candidate_pass_rate,
+                "passed": candidate_pass_rate - baseline_pass_rate >= threshold,
+            },
+            {
+                "name": "no_regressed_cases",
+                "label": "无新增回归用例失败",
+                "expected": [],
+                "actual": regressed_cases,
+                "passed": not regressed_cases,
+            },
+            {
+                "name": "source_failure_addressed",
+                "label": "源失败样本得到修复或整体指标不退化",
+                "expected": True,
+                "actual": source_related_fixed,
+                "passed": source_related_fixed,
+                "metadata": {"created_from_run_id": source_case_id},
+            },
+            {
+                "name": "not_duplicate_rejected_candidate",
+                "label": "未重复提交历史已拒候选补丁",
+                "expected": [],
+                "actual": [item.get("rejection_id") for item in exact_duplicates],
+                "passed": not exact_duplicates,
+            },
+            {
+                "name": "candidate_suite_completed",
+                "label": "候选诊断套件完成",
+                "expected": "terminal",
+                "actual": candidate_report.get("status"),
+                "passed": candidate_report.get("status") in {"passed", "failed"},
+            },
+        ]
+
+    @staticmethod
+    def _candidate_validation_reasons(
+        decision: str,
+        checks: list[dict[str, Any]],
+        fixed_cases: list[str],
+        regressed_cases: list[str],
+        pass_rate_delta: float,
+    ) -> list[str]:
+        failed = [item for item in checks if not item["passed"]]
+        if failed:
+            return [
+                f"候选验证结论为 {decision}：{item['label']} 未满足，实际值={item['actual']}。"
+                for item in failed
+            ]
+        return [
+            f"候选验证结论为 {decision}：套件通过率变化 {pass_rate_delta:.2%}。",
+            f"修复用例数 {len(fixed_cases)}，新增回归用例数 {len(regressed_cases)}。",
+            "候选 Skill 仍未写回生产 Skill，可在人工确认后采纳。",
+        ]
+
+    @staticmethod
+    def _candidate_validation_markdown(
+        candidate: dict[str, Any],
+        decision: str,
+        checks: list[dict[str, Any]],
+        reasons: list[str],
+        baseline_pass_rate: float,
+        candidate_pass_rate: float,
+        rejection_memory: dict[str, Any],
+    ) -> str:
+        lines = [
+            "# Skill Doctor Candidate Validation",
+            "",
+            f"- Decision：{decision}",
+            f"- Candidate：`{candidate.get('candidate_id')}`",
+            f"- Skill：{candidate.get('skill_id')}",
+            f"- Baseline Pass Rate：{baseline_pass_rate:.2%}",
+            f"- Candidate Pass Rate：{candidate_pass_rate:.2%}",
+            "",
+            "## Checks",
+        ]
+        for item in checks:
+            icon = "✅" if item["passed"] else "❌"
+            lines.append(f"- {icon} {item['label']}：{item['actual']}")
+        lines.extend(["", "## Reasons"])
+        lines.extend(f"- {reason}" for reason in reasons)
+        lines.extend(["", "## Reject Memory"])
+        lines.append(f"- 匹配历史拒绝记录：{rejection_memory.get('matched_count', 0)}")
+        recorded = rejection_memory.get("recorded")
+        if recorded:
+            lines.append(f"- 本次拒绝已记录：`{recorded.get('rejection_id')}`")
+        constraints = rejection_memory.get("constraints") or []
+        if constraints:
+            lines.append("- 生成候选时已注入约束：")
+            lines.extend(f"  - {item}" for item in constraints)
+        return "\n".join(lines).strip() + "\n"
+
+    def _load_rejection_history(self, skill_id: str | None = None) -> list[dict[str, Any]]:
+        if not self.rejection_memory_directory.is_dir():
+            return []
+        records: list[dict[str, Any]] = []
+        for path in sorted(self.rejection_memory_directory.glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if skill_id and payload.get("skill_id") != skill_id:
+                continue
+            records.append(payload)
+        return records
+
+    def _matching_rejection_history(
+        self,
+        skill_id: str,
+        attribution: dict[str, Any],
+        candidate: dict[str, Any] | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        candidate_patch_sha = (
+            self._text_sha256(str(candidate.get("skill_content_after") or ""))
+            if candidate
+            else ""
+        )
+        fault_type = attribution.get("fault_type")
+        action = attribution.get("action")
+        matches: list[dict[str, Any]] = []
+        for record in self._load_rejection_history(skill_id):
+            reason = ""
+            if candidate_patch_sha and record.get("patch_sha256") == candidate_patch_sha:
+                reason = "exact_rejected_patch"
+            elif fault_type and record.get("fault_type") == fault_type:
+                reason = "same_fault_type"
+            elif action and record.get("action") == action:
+                reason = "same_action"
+            if not reason:
+                continue
+            summary = {
+                "rejection_id": record.get("rejection_id"),
+                "candidate_id": record.get("candidate_id"),
+                "created_at": record.get("created_at"),
+                "skill_id": record.get("skill_id"),
+                "fault_type": record.get("fault_type"),
+                "action": record.get("action"),
+                "decision": record.get("decision"),
+                "failed_checks": record.get("failed_checks", []),
+                "reasons": record.get("reasons", []),
+                "regressed_cases": record.get("regressed_cases", []),
+                "patch_summary": record.get("patch_summary", ""),
+                "match_reason": reason,
+            }
+            matches.append(summary)
+        return sorted(matches, key=lambda item: item.get("created_at", ""), reverse=True)[:limit]
+
+    @staticmethod
+    def _rejection_constraints(matches: list[dict[str, Any]]) -> list[str]:
+        constraints: list[str] = []
+        for item in matches[:3]:
+            failed = ", ".join(str(value) for value in item.get("failed_checks", [])[:3])
+            reason = str((item.get("reasons") or [""])[0])[:180]
+            constraints.append(
+                "避免重复历史拒绝方案 "
+                f"{item.get('rejection_id')}（{item.get('match_reason')}）："
+                f"失败检查={failed or 'unknown'}；原因={reason or '未记录'}"
+            )
+        return constraints
+
+    def _skill_with_rejection_constraints(
+        self,
+        skill_content: str,
+        matches: list[dict[str, Any]],
+    ) -> str:
+        constraints = self._rejection_constraints(matches)
+        if not constraints:
+            return skill_content
+        block = "\n".join(f"- {item}" for item in constraints)
+        return (
+            f"{skill_content.rstrip()}\n\n"
+            "## Reject Memory 约束\n"
+            "以下历史候选已被验证门禁拒绝，生成/执行本候选时必须规避相同失败模式：\n"
+            f"{block}"
+        ).strip()
+
+    def _record_rejection_history(
+        self,
+        candidate: dict[str, Any],
+        report: dict[str, Any],
+        fixed_cases: list[str],
+        regressed_cases: list[str],
+    ) -> dict[str, Any]:
+        rejection_id = f"rej-{uuid4().hex[:12]}"
+        failed_checks = [
+            item["name"]
+            for item in report.get("checks", [])
+            if not item.get("passed")
+        ]
+        attribution = candidate.get("attribution") or {}
+        record = {
+            "schema_version": "1.0",
+            "rejection_id": rejection_id,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "candidate_id": candidate.get("candidate_id"),
+            "created_from_run_id": candidate.get("created_from_run_id"),
+            "skill_id": candidate.get("skill_id"),
+            "base_version": candidate.get("base_version"),
+            "candidate_version": candidate.get("candidate_version"),
+            "decision": report.get("decision"),
+            "policy": report.get("policy"),
+            "fault_type": attribution.get("fault_type"),
+            "action": attribution.get("action"),
+            "principle": candidate.get("principle", ""),
+            "diagnosis": candidate.get("diagnosis", ""),
+            "reasons": report.get("reasons", []),
+            "failed_checks": failed_checks,
+            "fixed_cases": fixed_cases,
+            "regressed_cases": regressed_cases,
+            "baseline_pass_rate": (report.get("baseline") or {}).get("pass_rate"),
+            "candidate_pass_rate": (report.get("candidate") or {}).get("pass_rate"),
+            "pass_rate_delta": (report.get("delta") or {}).get("pass_rate_delta"),
+            "patch_sha256": self._text_sha256(str(candidate.get("skill_content_after") or "")),
+            "patch_summary": (candidate.get("suggested_patch") or {}).get("summary", ""),
+        }
+        self.rejection_memory_directory.mkdir(parents=True, exist_ok=True)
+        path = self.rejection_memory_directory / f"{rejection_id}.json"
+        path.write_text(
+            f"{json.dumps(record, ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+        return {
+            "rejection_id": rejection_id,
+            "path": str(path.relative_to(self.project_root)),
+            "failed_checks": failed_checks,
+        }
+
+    @staticmethod
+    def _text_sha256(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    def _candidate_path(self, candidate_id: str) -> Path:
+        if not candidate_id.startswith("cand-") or not candidate_id[5:].isalnum():
+            raise ValueError("Invalid candidate id.")
+        return self.candidate_skill_directory / f"{candidate_id}.json"
+
+    def _load_candidate_skill(self, candidate_id: str) -> dict[str, Any]:
+        path = self._candidate_path(candidate_id)
+        if not path.is_file():
+            raise FileNotFoundError(candidate_id)
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _candidate_version(base_version: str) -> str:
+        if base_version and base_version != "unknown":
+            return f"{base_version}+candidate.1"
+        return "candidate.1"
 
     def _filled_expectation(
         self,

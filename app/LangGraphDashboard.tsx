@@ -2,13 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  createCandidateSkill,
   createRepairPreview,
+  listRejectionHistory,
   saveRunAsDiagnosticCase,
   streamLangGraphRun,
+  validateCandidateSkill,
   verifyRepair,
+  type CandidateSkillResponse,
+  type CandidateValidationReport,
   type LangGraphState,
   type RepairPreview,
   type RepairVerificationReport,
+  type RejectionHistoryResponse,
 } from "../lib/langgraph-stream";
 import { useRunStore } from "./RunStore";
 import BusinessResultCard from "./BusinessResultCard";
@@ -109,6 +115,10 @@ export default function LangGraphDashboard() {
   const [candidateRunId, setCandidateRunId] = useState("");
   const [verificationReport, setVerificationReport] = useState<RepairVerificationReport | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [candidateSkill, setCandidateSkill] = useState<CandidateSkillResponse["candidate"] | null>(null);
+  const [candidateValidation, setCandidateValidation] = useState<CandidateValidationReport | null>(null);
+  const [candidateStatus, setCandidateStatus] = useState<"idle" | "creating" | "validating" | "done" | "error">("idle");
+  const [rejectionHistory, setRejectionHistory] = useState<RejectionHistoryResponse | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const apiUrl =
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
@@ -161,6 +171,10 @@ export default function LangGraphDashboard() {
     setCandidateRunId("");
     setVerificationReport(null);
     setVerificationStatus("idle");
+    setCandidateSkill(null);
+    setCandidateValidation(null);
+    setCandidateStatus("idle");
+    setRejectionHistory(null);
     setUiStatus("running");
     try {
       await streamLangGraphRun(
@@ -242,6 +256,31 @@ export default function LangGraphDashboard() {
     } catch (caught) {
       setVerificationStatus("error");
       setCaseSaveStatus(caught instanceof Error ? caught.message : "修复验证失败。");
+    }
+  };
+
+  const createAndValidateCandidate = async () => {
+    if (!snapshot?.run_id) return;
+    setCandidateStatus("creating");
+    setCandidateSkill(null);
+    setCandidateValidation(null);
+    try {
+      const history = await listRejectionHistory(snapshot.skill_id, apiUrl);
+      setRejectionHistory(history);
+      const created = await createCandidateSkill(snapshot.run_id, apiUrl);
+      setCandidateSkill(created.candidate);
+      setCandidateStatus("validating");
+      const validation = await validateCandidateSkill(
+        created.candidate.candidate_id,
+        apiUrl,
+      );
+      setCandidateValidation(validation);
+      const refreshed = await listRejectionHistory(snapshot.skill_id, apiUrl);
+      setRejectionHistory(refreshed);
+      setCandidateStatus("done");
+    } catch (caught) {
+      setCandidateStatus("error");
+      setCaseSaveStatus(caught instanceof Error ? caught.message : "候选 Skill 验证失败。");
     }
   };
 
@@ -378,6 +417,17 @@ export default function LangGraphDashboard() {
                 : "未注入，仅基于 Trace 证据判断"}
             </strong>
           </div>
+          {rejectionHistory ? (
+            <div className="skill-content-status warning">
+              <span>Reject Memory</span>
+              <strong>
+                历史拒绝 {rejectionHistory.count.toLocaleString("zh-CN")} 条
+                {candidateSkill?.rejection_memory?.matched_count
+                  ? ` · 本次匹配 ${candidateSkill.rejection_memory.matched_count} 条`
+                  : ""}
+              </strong>
+            </div>
+          ) : null}
           <div className="graph-action-row">
             <button type="button" onClick={() => void saveCase()}>
               保存为回归用例
@@ -389,6 +439,18 @@ export default function LangGraphDashboard() {
               onClick={() => void previewRepair()}
             >
               {previewStatus === "loading" ? "生成中" : "生成修复预览"}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!snapshot.attribution || candidateStatus === "creating" || candidateStatus === "validating"}
+              onClick={() => void createAndValidateCandidate()}
+            >
+              {candidateStatus === "creating"
+                ? "生成候选中"
+                : candidateStatus === "validating"
+                  ? "验证候选中"
+                  : "生成候选并验证"}
             </button>
           </div>
           <div className="repair-verification-form">
@@ -458,6 +520,55 @@ export default function LangGraphDashboard() {
                 ))}
               </ul>
               <p>{verificationReport.reasons[0]}</p>
+            </div>
+          ) : null}
+          {candidateValidation ? (
+            <div className={`repair-verification-card ${candidateValidation.decision.toLowerCase()}`}>
+              <div>
+                <span>候选 Skill 验证</span>
+                <strong>{candidateValidation.decision}</strong>
+              </div>
+              <p>
+                {candidateSkill?.candidate_id} · {candidateValidation.skill_id}@{candidateValidation.candidate_version}
+              </p>
+              <div className="graph-pass-pair compact">
+                <div>
+                  <span>Baseline Suite</span>
+                  <strong>{percent(candidateValidation.baseline.pass_rate)}</strong>
+                </div>
+                <b>→</b>
+                <div>
+                  <span>Candidate Suite</span>
+                  <strong>{percent(candidateValidation.candidate.pass_rate)}</strong>
+                </div>
+              </div>
+              <ul>
+                {candidateValidation.checks.map((check) => (
+                  <li key={check.name} className={check.passed ? "passed" : "failed"}>
+                    <span>{check.passed ? "✅" : "❌"}</span>
+                    {check.label}
+                  </li>
+                ))}
+              </ul>
+              {candidateValidation.rejection_memory ? (
+                <div className="reject-memory-card">
+                  <strong>Reject Memory</strong>
+                  <span>
+                    匹配 {candidateValidation.rejection_memory.matched_count} 条
+                    {candidateValidation.rejection_memory.recorded
+                      ? ` · 已记录 ${candidateValidation.rejection_memory.recorded.rejection_id}`
+                      : ""}
+                  </span>
+                  {candidateValidation.rejection_memory.constraints.length ? (
+                    <ul>
+                      {candidateValidation.rejection_memory.constraints.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+              <p>{candidateValidation.reasons[0]}</p>
             </div>
           ) : null}
         </article>

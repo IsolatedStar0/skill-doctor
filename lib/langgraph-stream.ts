@@ -329,6 +329,88 @@ export type RepairVerificationReport = {
   markdown: string;
 };
 
+export type CandidateSkillResponse = {
+  status: "created";
+  path: string;
+  candidate: {
+    schema_version: "1.0";
+    candidate_id: string;
+    status: "candidate_only";
+    created_from_run_id: string;
+    skill_id: string;
+    base_version: string;
+    candidate_version: string;
+    repair_type: string;
+    risk: string;
+    diagnosis: string;
+    principle: string;
+    skill_content_before: string;
+    skill_content_after: string;
+    rejection_memory?: RejectionMemorySummary;
+  };
+};
+
+export type RejectionMemoryRecord = {
+  rejection_id: string;
+  candidate_id: string;
+  created_at: string;
+  skill_id: string;
+  fault_type?: string | null;
+  action?: string | null;
+  decision: "REJECT" | string;
+  failed_checks: string[];
+  reasons: string[];
+  regressed_cases: string[];
+  patch_summary: string;
+  match_reason?: string;
+};
+
+export type RejectionMemorySummary = {
+  matched_count: number;
+  constraints: string[];
+  matches: RejectionMemoryRecord[];
+  recorded?: {
+    rejection_id: string;
+    path: string;
+    failed_checks: string[];
+  } | null;
+};
+
+export type RejectionHistoryResponse = {
+  schema_version: "1.0";
+  skill_id: string | null;
+  count: number;
+  records: RejectionMemoryRecord[];
+};
+
+export type CandidateValidationReport = {
+  schema_version: "1.0";
+  status: "validated";
+  decision: "ADOPT" | "REJECT";
+  policy: "strict" | "balanced";
+  candidate_id: string;
+  skill_id: string;
+  base_version: string;
+  candidate_version: string;
+  baseline: DiagnosticSuiteReport["summary"];
+  candidate: DiagnosticSuiteReport["summary"];
+  delta: {
+    pass_rate_delta: number;
+    fixed_cases: string[];
+    regressed_cases: string[];
+  };
+  checks: Array<{
+    name: string;
+    label: string;
+    expected: unknown;
+    actual: unknown;
+    passed: boolean;
+  }>;
+  reasons: string[];
+  rejection_memory: RejectionMemorySummary;
+  markdown: string;
+};
+
 export type RunRegistryEvent = {
   type: "run.updated";
   updated_at: string;
@@ -438,6 +520,53 @@ export async function verifyRepair(
     throw new Error(`Repair verification failed with ${response.status}.`);
   }
   return (await response.json()) as RepairVerificationReport;
+}
+
+export async function createCandidateSkill(runId: string, value?: string) {
+  const response = await fetch(
+    `${apiBaseUrl(value)}/repairs/candidates/from-run/${encodeURIComponent(runId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ include_full_skill: true }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Candidate skill creation failed with ${response.status}.`);
+  }
+  return (await response.json()) as CandidateSkillResponse;
+}
+
+export async function validateCandidateSkill(
+  candidateId: string,
+  value?: string,
+) {
+  const response = await fetch(
+    `${apiBaseUrl(value)}/repairs/candidates/${encodeURIComponent(candidateId)}/validate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        include_default_cases: true,
+        include_saved_cases: true,
+        decision_policy: "strict",
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Candidate validation failed with ${response.status}.`);
+  }
+  return (await response.json()) as CandidateValidationReport;
+}
+
+export async function listRejectionHistory(skillId: string, value?: string) {
+  const response = await fetch(
+    `${apiBaseUrl(value)}/repairs/rejections/${encodeURIComponent(skillId)}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Rejection history request failed with ${response.status}.`);
+  }
+  return (await response.json()) as RejectionHistoryResponse;
 }
 
 export async function streamBenchmarkRun(

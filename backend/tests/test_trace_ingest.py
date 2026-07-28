@@ -1,10 +1,15 @@
 import http.client
 import json
+import hashlib
 import threading
 from pathlib import Path
 
 from backend.skilldoctor.http_server import make_handler
-from backend.skilldoctor.models import RepairVerificationRequest, TraceIngestRequest
+from backend.skilldoctor.models import (
+    CandidateValidationRequest,
+    RepairVerificationRequest,
+    TraceIngestRequest,
+)
 from backend.skilldoctor.service import RunService
 from http.server import ThreadingHTTPServer
 
@@ -475,6 +480,193 @@ def test_repair_preview_from_attributed_trace_run(tmp_path: Path) -> None:
     assert preview["can_apply"] is False
     assert "Skill Doctor 修复建议" in preview["suggested_patch"]["after"]
     assert preview["verification_plan"]
+
+
+def test_candidate_skill_created_and_validated_from_trace_run(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.candidate_skill_directory = tmp_path / "candidate_skills"
+    service.rejection_memory_directory = tmp_path / "rejection_memory"
+    service.adaptor_llm_client = None
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    created = service.create_candidate_skill_from_run(state["run_id"])
+    candidate = created["candidate"]
+
+    assert created["status"] == "created"
+    assert candidate["candidate_id"].startswith("cand-")
+    assert candidate["created_from_run_id"] == state["run_id"]
+    assert "Skill Doctor 修复建议" in candidate["skill_content_after"]
+    assert (service.candidate_skill_directory / f"{candidate['candidate_id']}.json").is_file()
+
+    validation = service.validate_candidate_skill(
+        candidate["candidate_id"],
+        CandidateValidationRequest(include_saved_cases=False),
+    )
+    assert validation["status"] == "validated"
+    assert validation["candidate_id"] == candidate["candidate_id"]
+    assert validation["decision"] in {"ADOPT", "REJECT"}
+    assert validation["checks"]
+    assert validation["rejection_memory"]["matched_count"] == 0
+    assert "Skill Doctor Candidate Validation" in validation["markdown"]
+
+
+def test_rejection_memory_records_and_blocks_duplicate_candidate(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.candidate_skill_directory = tmp_path / "candidate_skills"
+    service.rejection_memory_directory = tmp_path / "rejection_memory"
+    service.adaptor_llm_client = None
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    created = service.create_candidate_skill_from_run(state["run_id"])
+    candidate = created["candidate"]
+    service.rejection_memory_directory.mkdir(parents=True, exist_ok=True)
+    (service.rejection_memory_directory / "rej-seeded001.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "rejection_id": "rej-seeded001",
+                "created_at": "2026-07-28T00:00:00Z",
+                "candidate_id": "cand-seeded001",
+                "skill_id": candidate["skill_id"],
+                "decision": "REJECT",
+                "fault_type": "skill_wrong",
+                "action": "patch_skill",
+                "failed_checks": ["candidate_passed"],
+                "reasons": ["历史候选未修复源失败。"],
+                "regressed_cases": [],
+                "patch_summary": "重复补丁",
+                "patch_sha256": hashlib.sha256(
+                    candidate["skill_content_after"].encode("utf-8")
+                ).hexdigest(),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    validation = service.validate_candidate_skill(
+        candidate["candidate_id"],
+        CandidateValidationRequest(include_saved_cases=False),
+    )
+
+    assert validation["decision"] == "REJECT"
+    duplicate_check = next(
+        item
+        for item in validation["checks"]
+        if item["name"] == "not_duplicate_rejected_candidate"
+    )
+    assert duplicate_check["passed"] is False
+    assert validation["rejection_memory"]["matched_count"] >= 1
+    assert validation["rejection_memory"]["recorded"]["rejection_id"].startswith("rej-")
+    history = service.list_rejection_history(candidate["skill_id"])
+    assert history["count"] == 2
+
+
+def test_rejection_memory_injects_constraints_into_new_candidate(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.candidate_skill_directory = tmp_path / "candidate_skills"
+    service.rejection_memory_directory = tmp_path / "rejection_memory"
+    service.adaptor_llm_client = None
+    service.rejection_memory_directory.mkdir(parents=True, exist_ok=True)
+    (service.rejection_memory_directory / "rej-samefault001.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "rejection_id": "rej-samefault001",
+                "created_at": "2026-07-28T00:00:00Z",
+                "candidate_id": "cand-old001",
+                "skill_id": "trace-skill",
+                "decision": "REJECT",
+                "fault_type": "skill_wrong",
+                "action": "patch_skill",
+                "failed_checks": ["no_regressed_cases"],
+                "reasons": ["引入了新的回归用例。"],
+                "regressed_cases": ["healthy-aime-fast-path"],
+                "patch_summary": "旧失败补丁",
+                "patch_sha256": "seed",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    created = service.create_candidate_skill_from_run(state["run_id"])
+    candidate = created["candidate"]
+
+    assert candidate["rejection_memory"]["matched_count"] == 1
+    assert candidate["rejection_memory"]["constraints"]
+    assert "Reject Memory 约束" in candidate["skill_content_after"]
+
+
+def test_candidate_skill_http_endpoints(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.candidate_skill_directory = tmp_path / "candidate_skills"
+    service.rejection_memory_directory = tmp_path / "rejection_memory"
+    service.adaptor_llm_client = None
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request(
+            "POST",
+            f"/repairs/candidates/from-run/{state['run_id']}",
+            json.dumps({}),
+            {"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        created = json.loads(response.read().decode("utf-8"))
+        assert response.status == 200, created
+
+        candidate_id = created["candidate"]["candidate_id"]
+        connection.request(
+            "POST",
+            f"/repairs/candidates/{candidate_id}/validate",
+            json.dumps({"include_saved_cases": False}),
+            {"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        validation = json.loads(response.read().decode("utf-8"))
+        connection.close()
+
+        assert response.status == 200, validation
+        assert validation["candidate_id"] == candidate_id
+        assert validation["status"] == "validated"
+
+        connection.request("GET", "/repairs/rejections/trace-skill")
+        response = connection.getresponse()
+        history = json.loads(response.read().decode("utf-8"))
+
+        assert response.status == 200, history
+        assert history["skill_id"] == "trace-skill"
+        assert "records" in history
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_verify_repair_adopts_improved_candidate(tmp_path: Path) -> None:

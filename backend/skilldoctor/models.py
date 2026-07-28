@@ -326,3 +326,18 @@ class RepairVerificationRequest(BaseModel):
     candidate_run_id: str
     include_saved_cases: bool = True
     decision_policy: Literal["strict", "balanced"] = "strict"
+
+
+class CandidateSkillRequest(BaseModel):
+    """Create a non-mutating candidate Skill revision from a repair preview."""
+
+    include_full_skill: bool = True
+    note: str | None = None
+
+
+class CandidateValidationRequest(BaseModel):
+    """Validate a candidate Skill against diagnostic regression suites."""
+
+    include_default_cases: bool = True
+    include_saved_cases: bool = True
+    decision_policy: Literal["strict", "balanced"] = "strict"

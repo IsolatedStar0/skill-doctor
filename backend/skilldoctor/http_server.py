@@ -14,6 +14,8 @@ from pydantic import ValidationError
 from .benchmark import BenchmarkService
 from .models import (
     BenchmarkRequest,
+    CandidateSkillRequest,
+    CandidateValidationRequest,
     DiagnosticSuiteRequest,
     RepairPreviewRequest,
     RepairVerificationRequest,
@@ -63,8 +65,10 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             self._cors()
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(body)
+            self.close_connection = True
 
         def _payload(self) -> dict:
             length = int(self.headers.get("Content-Length", "0"))
@@ -157,6 +161,10 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             if path == "/diagnostics/default":
                 self._json(HTTPStatus.OK, service.run_diagnostic_suite())
                 return
+            if path.startswith("/repairs/rejections/"):
+                skill_id = path.removeprefix("/repairs/rejections/")
+                self._json(HTTPStatus.OK, service.list_rejection_history(skill_id))
+                return
             if path.startswith("/benchmarks/"):
                 try:
                     self._json(
@@ -193,6 +201,10 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                     request = DiagnosticSuiteRequest.model_validate(payload)
                 elif path.startswith("/repairs/preview/"):
                     request = RepairPreviewRequest.model_validate(payload)
+                elif path.startswith("/repairs/candidates/from-run/"):
+                    request = CandidateSkillRequest.model_validate(payload)
+                elif path.startswith("/repairs/candidates/") and path.endswith("/validate"):
+                    request = CandidateValidationRequest.model_validate(payload)
                 elif path == "/repairs/verify":
                     request = RepairVerificationRequest.model_validate(payload)
                 elif path.startswith("/benchmarks"):
@@ -249,6 +261,34 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                     self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
                 except FileNotFoundError:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "Run not found."})
+                return
+            if path.startswith("/repairs/candidates/from-run/"):
+                assert isinstance(request, CandidateSkillRequest)
+                try:
+                    self._json(
+                        HTTPStatus.OK,
+                        service.create_candidate_skill_from_run(
+                            path.removeprefix("/repairs/candidates/from-run/"),
+                            request,
+                        ),
+                    )
+                except ValueError as error:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                except FileNotFoundError:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "Run not found."})
+                return
+            if path.startswith("/repairs/candidates/") and path.endswith("/validate"):
+                assert isinstance(request, CandidateValidationRequest)
+                candidate_id = path.removeprefix("/repairs/candidates/").removesuffix("/validate")
+                try:
+                    self._json(
+                        HTTPStatus.OK,
+                        service.validate_candidate_skill(candidate_id, request),
+                    )
+                except ValueError as error:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                except FileNotFoundError:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "Candidate not found."})
                 return
             if path == "/repairs/verify":
                 assert isinstance(request, RepairVerificationRequest)

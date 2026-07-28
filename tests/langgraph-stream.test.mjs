@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   consumeNdjson,
+  createCandidateSkill,
   getAgentRun,
   getBenchmarkRun,
+  listRejectionHistory,
   listAgentRuns,
   NdjsonParser,
   streamBenchmarkRun,
   subscribeAgentRuns,
+  validateCandidateSkill,
   verifyRepair,
 } from "../lib/langgraph-stream.ts";
 
@@ -237,6 +240,103 @@ test("posts repair verification request", async () => {
       include_saved_cases: true,
       decision_policy: "strict",
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("creates and validates candidate skill", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    const body = String(url).includes("/validate")
+      ? {
+          schema_version: "1.0",
+          status: "validated",
+          decision: "ADOPT",
+          candidate_id: "cand-demo001",
+          skill_id: "trace-skill",
+          base_version: "1.0.0",
+          candidate_version: "1.0.0+candidate.1",
+          baseline: { pass_rate: 0.5 },
+          candidate: { pass_rate: 1 },
+          delta: { pass_rate_delta: 0.5, fixed_cases: [], regressed_cases: [] },
+          checks: [],
+          reasons: [],
+          rejection_memory: { matched_count: 0, constraints: [], matches: [], recorded: null },
+          markdown: "# Skill Doctor Candidate Validation\n",
+        }
+      : {
+          status: "created",
+          path: "candidate_skills/cand-demo001.json",
+          candidate: {
+            candidate_id: "cand-demo001",
+            status: "candidate_only",
+            skill_id: "trace-skill",
+            base_version: "1.0.0",
+            candidate_version: "1.0.0+candidate.1",
+          },
+        };
+    return new Response(JSON.stringify(body), { status: 200 });
+  };
+
+  try {
+    const created = await createCandidateSkill("lg-source001", "http://api.test");
+    const validation = await validateCandidateSkill(
+      created.candidate.candidate_id,
+      "http://api.test",
+    );
+
+    assert.equal(created.candidate.candidate_id, "cand-demo001");
+    assert.equal(validation.decision, "ADOPT");
+    assert.equal(
+      requests[0].url,
+      "http://api.test/repairs/candidates/from-run/lg-source001",
+    );
+    assert.equal(
+      requests[1].url,
+      "http://api.test/repairs/candidates/cand-demo001/validate",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("loads rejection history for a skill", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return new Response(
+      JSON.stringify({
+        schema_version: "1.0",
+        skill_id: "trace-skill",
+        count: 1,
+        records: [
+          {
+            rejection_id: "rej-demo001",
+            candidate_id: "cand-demo001",
+            created_at: "2026-07-28T00:00:00Z",
+            skill_id: "trace-skill",
+            decision: "REJECT",
+            failed_checks: ["candidate_passed"],
+            reasons: ["未通过"],
+            regressed_cases: [],
+            patch_summary: "demo",
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  };
+
+  try {
+    const history = await listRejectionHistory("trace-skill", "http://api.test/");
+
+    assert.equal(history.count, 1);
+    assert.equal(history.records[0].rejection_id, "rej-demo001");
+    assert.equal(requests[0], "http://api.test/repairs/rejections/trace-skill");
   } finally {
     globalThis.fetch = originalFetch;
   }
