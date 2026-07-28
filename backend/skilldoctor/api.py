@@ -13,7 +13,9 @@ from .benchmark import BenchmarkService
 from .models import (
     BenchmarkRequest,
     DiagnosticSuiteRequest,
+    RepairPreviewRequest,
     RunRequest,
+    SaveDiagnosticCaseRequest,
     TraceIngestRequest,
 )
 from .service import RunService
@@ -167,3 +169,26 @@ def run_diagnostics(request: DiagnosticSuiteRequest) -> dict:
 @app.get("/diagnostics/default")
 def run_default_diagnostics() -> dict:
     return service.run_diagnostic_suite(DiagnosticSuiteRequest())
+
+
+@app.post("/diagnostics/cases/from-run/{run_id}")
+def save_diagnostic_case_from_run(
+    run_id: str,
+    request: SaveDiagnosticCaseRequest,
+) -> dict:
+    try:
+        return service.save_diagnostic_case_from_run(run_id, request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Run not found.") from error
+
+
+@app.post("/repairs/preview/{run_id}")
+def create_repair_preview(run_id: str, request: RepairPreviewRequest) -> dict:
+    try:
+        return service.create_repair_preview(run_id, request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Run not found.") from error

@@ -163,6 +163,7 @@ def test_trace_ingest_passed_aime_trace_keeps_fast_path(tmp_path: Path) -> None:
 def test_default_diagnostic_suite_covers_core_trace_routes(tmp_path: Path) -> None:
     service = RunService(PROJECT_ROOT)
     service.report_directory = tmp_path
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
     service.adaptor_llm_client = None
 
     report = service.run_diagnostic_suite()
@@ -176,6 +177,7 @@ def test_default_diagnostic_suite_covers_core_trace_routes(tmp_path: Path) -> No
         "repairable": 1,
         "non_skill": 1,
         "llm_authored": 0,
+        "saved_cases": 0,
     }
     by_id = {item["case_id"]: item for item in report["cases"]}
     assert by_id["healthy-aime-fast-path"]["status"] == "passed"
@@ -190,6 +192,7 @@ def test_default_diagnostic_suite_covers_core_trace_routes(tmp_path: Path) -> No
 def test_diagnostic_suite_http_endpoint(tmp_path: Path) -> None:
     service = RunService(PROJECT_ROOT)
     service.report_directory = tmp_path
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
     service.adaptor_llm_client = None
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -212,6 +215,52 @@ def test_diagnostic_suite_http_endpoint(tmp_path: Path) -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_save_run_as_diagnostic_case_and_loads_in_suite(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.adaptor_llm_client = None
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    saved = service.save_diagnostic_case_from_run(state["run_id"])
+
+    assert saved["status"] == "saved"
+    assert saved["case"]["source"] == "saved_run"
+    assert saved["case"]["expectation"]["cause"] == "skill"
+    assert (service.diagnostic_case_directory / f"{saved['case']['case_id']}.json").is_file()
+
+    cases = service.load_saved_diagnostic_cases()
+    assert len(cases) == 1
+    assert cases[0].source == "saved_run"
+
+    report = service.run_diagnostic_suite()
+    assert report["summary"]["total"] == 5
+    assert report["summary"]["saved_cases"] == 1
+    assert any(item["source"] == "saved_run" for item in report["cases"])
+
+
+def test_repair_preview_from_attributed_trace_run(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.adaptor_llm_client = None
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    preview = service.create_repair_preview(state["run_id"])
+
+    assert preview["schema_version"] == "1.0"
+    assert preview["run_id"] == state["run_id"]
+    assert preview["repair_type"] == "skill_revision"
+    assert preview["status"] == "preview_only"
+    assert preview["can_apply"] is False
+    assert "Skill Doctor 修复建议" in preview["suggested_patch"]["after"]
+    assert preview["verification_plan"]
 
 
 def _raw_puck_trace_payload() -> str:

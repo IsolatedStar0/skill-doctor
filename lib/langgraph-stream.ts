@@ -182,6 +182,7 @@ export type DiagnosticCaseReport = {
   case_id: string;
   name: string;
   description: string;
+  source: "built-in" | "custom" | "saved_run";
   passed: boolean;
   category: "healthy" | "skill" | "non_skill";
   repairable: boolean;
@@ -231,9 +232,52 @@ export type DiagnosticSuiteReport = {
     repairable: number;
     non_skill: number;
     llm_authored: number;
+    saved_cases?: number;
   };
   cases: DiagnosticCaseReport[];
   markdown: string;
+};
+
+export type SavedDiagnosticCaseResponse = {
+  status: "saved";
+  path: string;
+  case: {
+    case_id: string;
+    name: string;
+    description: string;
+    source: "saved_run";
+  };
+};
+
+export type RepairPreview = {
+  schema_version: "1.0";
+  run_id: string;
+  skill_id: string;
+  status: "preview_only";
+  repair_type: "skill_revision" | "loader_revision" | "manual_triage";
+  can_apply: boolean;
+  risk: "low" | "medium" | "high" | string;
+  diagnosis: string;
+  principle: string;
+  attribution: {
+    taxonomy: string;
+    cause: string;
+    fault_type: string;
+    action: string;
+    confidence: number;
+    agent_source: "llm" | "rule-based" | "none";
+    t_star?: number | null;
+    fault_chain: number[];
+  };
+  suggested_patch: {
+    summary: string;
+    before: string;
+    after: string;
+    diff: string;
+  };
+  verification_plan: string[];
+  notes: string[];
+  can_apply_reason: string;
 };
 
 export type RunRegistryEvent = {
@@ -294,6 +338,36 @@ export async function runDefaultDiagnostics(value?: string) {
     throw new Error(`Diagnostic request failed with ${response.status}.`);
   }
   return (await response.json()) as DiagnosticSuiteReport;
+}
+
+export async function saveRunAsDiagnosticCase(runId: string, value?: string) {
+  const response = await fetch(
+    `${apiBaseUrl(value)}/diagnostics/cases/from-run/${encodeURIComponent(runId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Save diagnostic case failed with ${response.status}.`);
+  }
+  return (await response.json()) as SavedDiagnosticCaseResponse;
+}
+
+export async function createRepairPreview(runId: string, value?: string) {
+  const response = await fetch(
+    `${apiBaseUrl(value)}/repairs/preview/${encodeURIComponent(runId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ include_full_skill: false }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Repair preview failed with ${response.status}.`);
+  }
+  return (await response.json()) as RepairPreview;
 }
 
 export async function streamBenchmarkRun(

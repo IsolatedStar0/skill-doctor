@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import queue
+import re
 import threading
 import time
 from copy import deepcopy
@@ -15,8 +16,11 @@ from .models import (
     AgentState,
     DiagnosticCaseRequest,
     DiagnosticSuiteRequest,
+    DiagnosticExpectation,
+    RepairPreviewRequest,
     RunEvent,
     RunRequest,
+    SaveDiagnosticCaseRequest,
     TraceIngestRequest,
 )
 from .observability import (
@@ -47,6 +51,7 @@ class RunService:
             or Path(__file__).resolve().parents[2]
         ).resolve()
         self.report_directory = self.project_root / "reports" / "langgraph"
+        self.diagnostic_case_directory = self.project_root / "diagnostic_cases"
         self.exporter_factory = exporter_factory
         # Build a shared DeepSeek LLM client once per service. Returns None
         # gracefully when DEEPSEEK_API_KEY / openai SDK is unavailable, in
@@ -137,11 +142,16 @@ class RunService:
         request: DiagnosticSuiteRequest | None = None,
     ) -> dict[str, Any]:
         suite = request or DiagnosticSuiteRequest()
-        cases = [*(_default_diagnostic_cases() if suite.include_default_cases else []), *suite.cases]
+        cases = [
+            *(_default_diagnostic_cases() if suite.include_default_cases else []),
+            *(self.load_saved_diagnostic_cases() if suite.include_saved_cases else []),
+            *suite.cases,
+        ]
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         reports = [self._run_diagnostic_case(case) for case in cases]
         passed = sum(1 for item in reports if item["passed"])
         failed = len(reports) - passed
+        saved = sum(1 for item in reports if item.get("source") == "saved_run")
         return {
             "schema_version": "1.0",
             "suite_id": suite.suite_id,
@@ -156,9 +166,140 @@ class RunService:
                 "repairable": sum(1 for item in reports if item["repairable"]),
                 "non_skill": sum(1 for item in reports if item["category"] == "non_skill"),
                 "llm_authored": sum(1 for item in reports if item["agent_source"] == "llm"),
+                "saved_cases": saved,
             },
             "cases": reports,
             "markdown": self._diagnostic_markdown(suite.name, reports),
+        }
+
+    def load_saved_diagnostic_cases(self) -> list[DiagnosticCaseRequest]:
+        """Load locally persisted real-trace regression cases."""
+
+        if not self.diagnostic_case_directory.is_dir():
+            return []
+        cases: list[DiagnosticCaseRequest] = []
+        for path in sorted(self.diagnostic_case_directory.glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            case = DiagnosticCaseRequest.model_validate(payload)
+            cases.append(case)
+        return cases
+
+    def save_diagnostic_case_from_run(
+        self,
+        run_id: str,
+        request: SaveDiagnosticCaseRequest | None = None,
+    ) -> dict[str, Any]:
+        """Persist an existing run as a reusable diagnostic regression case."""
+
+        state = self.get(run_id)
+        execution = state.get("execution")
+        if not execution:
+            raise ValueError("Run has no execution payload to save as a diagnostic case.")
+
+        attribution = state.get("attribution") or {}
+        requested = request or SaveDiagnosticCaseRequest()
+        expectation = self._filled_expectation(requested.expectation, state, attribution)
+        case_id = requested.case_id or self._case_id_from_state(state, attribution)
+        case = DiagnosticCaseRequest.model_validate(
+            {
+                "case_id": case_id,
+                "name": requested.name or self._case_name_from_state(state, attribution),
+                "description": requested.description
+                or self._case_description_from_state(state, attribution),
+                "source": "saved_run",
+                "trace": {
+                    "task": state.get("task", "Imported Aime Skill execution trace."),
+                    "skill_id": state.get("skill_id"),
+                    "skill_version": state.get("skill_version", "unknown"),
+                    "skill_content": state.get("skill_content", ""),
+                    "condition": state.get("condition", "standard"),
+                    "parent_run_id": run_id,
+                    "repair_enabled": bool(state.get("repair_enabled", True)),
+                    "max_attempts": int(state.get("max_attempts", 1)),
+                    "execution": execution,
+                    "business_result": state.get("business_result"),
+                    "trace_metadata": {
+                        "saved_from_run_id": run_id,
+                        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "source": "saved_run",
+                    },
+                },
+                "expectation": expectation.model_dump(mode="json"),
+            }
+        )
+        self.diagnostic_case_directory.mkdir(parents=True, exist_ok=True)
+        path = self.diagnostic_case_directory / f"{case.case_id}.json"
+        path.write_text(
+            f"{json.dumps(case.model_dump(mode='json'), ensure_ascii=False, indent=2)}\n",
+            encoding="utf-8",
+        )
+        return {
+            "status": "saved",
+            "path": str(path.relative_to(self.project_root)),
+            "case": case.model_dump(mode="json"),
+        }
+
+    def create_repair_preview(
+        self,
+        run_id: str,
+        request: RepairPreviewRequest | None = None,
+    ) -> dict[str, Any]:
+        """Generate an auditable, non-mutating repair proposal for one run."""
+
+        state = self.get(run_id)
+        attribution = state.get("attribution")
+        if not attribution:
+            raise ValueError("Run has no attribution result to preview a repair.")
+        options = request or RepairPreviewRequest()
+        action = attribution.get("action", "split_non_skill")
+        principle = (
+            attribution.get("improvement_principle")
+            or attribution.get("agent_conclusion")
+            or attribution.get("explanation")
+            or "根据归因结果补充缺失约束，并通过回归用例验证。"
+        )
+        skill_content = state.get("skill_content") or ""
+        before = skill_content if options.include_full_skill else self._skill_preview(skill_content)
+        added_rule = self._repair_instruction(principle, attribution)
+        after = f"{before.rstrip()}\n\n{added_rule}".strip() if before else added_rule
+        can_apply = action in {"patch_skill", "patch_loader"}
+        repair_type = "skill_revision" if action == "patch_skill" else "loader_revision" if action == "patch_loader" else "manual_triage"
+        return {
+            "schema_version": "1.0",
+            "run_id": run_id,
+            "skill_id": state.get("skill_id"),
+            "status": "preview_only",
+            "repair_type": repair_type,
+            "can_apply": False,
+            "risk": self._repair_risk(attribution),
+            "diagnosis": attribution.get("agent_reason") or attribution.get("explanation", ""),
+            "principle": principle,
+            "attribution": {
+                "taxonomy": attribution.get("taxonomy"),
+                "cause": attribution.get("cause"),
+                "fault_type": attribution.get("fault_type"),
+                "action": action,
+                "confidence": attribution.get("confidence"),
+                "agent_source": attribution.get("agent_source", "none"),
+                "t_star": attribution.get("t_star"),
+                "fault_chain": attribution.get("fault_chain", []),
+            },
+            "suggested_patch": {
+                "summary": self._repair_summary(action, principle),
+                "before": before,
+                "after": after,
+                "diff": self._simple_diff(before, after),
+            },
+            "verification_plan": self._verification_plan(state, attribution),
+            "notes": [
+                "当前接口只生成可审查修复预览，不会直接修改 Skill 文件。",
+                "建议先保存该 run 为回归用例，再用新 trace 验证修复效果。",
+            ],
+            "can_apply_reason": (
+                "已定位到可修复通道，但需要用户确认后再接入写文件/MR。"
+                if can_apply
+                else "该问题被归因为 non-skill 或人工分流，不建议自动修改 Skill。"
+            ),
         }
 
     def stream_ingested_trace(
@@ -240,6 +381,7 @@ class RunService:
             "case_id": case.case_id,
             "name": case.name,
             "description": case.description,
+            "source": case.source,
             "passed": all(item["passed"] for item in checks),
             "category": category,
             "repairable": repair_patch is not None,
@@ -273,6 +415,136 @@ class RunService:
             },
             "checks": checks,
         }
+
+    def _filled_expectation(
+        self,
+        expectation: DiagnosticExpectation,
+        state: dict[str, Any],
+        attribution: dict[str, Any],
+    ) -> DiagnosticExpectation:
+        return expectation.model_copy(
+            update={
+                "status": expectation.status or state.get("status"),
+                "cause": expectation.cause or attribution.get("cause"),
+                "fault_type": expectation.fault_type or attribution.get("fault_type"),
+                "action": expectation.action or attribution.get("action"),
+                "should_repair": (
+                    expectation.should_repair
+                    if expectation.should_repair is not None
+                    else state.get("repair_patch") is not None
+                ),
+                "should_call_llm": (
+                    expectation.should_call_llm
+                    if expectation.should_call_llm is not None
+                    else attribution.get("agent_source") == "llm"
+                ),
+            }
+        )
+
+    @staticmethod
+    def _case_id_from_state(
+        state: dict[str, Any],
+        attribution: dict[str, Any],
+    ) -> str:
+        raw = "-".join(
+            str(part)
+            for part in [
+                state.get("skill_id", "skill"),
+                attribution.get("fault_type") or state.get("status", "trace"),
+                state.get("run_id", "run"),
+            ]
+            if part
+        )
+        slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", raw).strip("-._").lower()
+        return slug[:96] or "saved-run-case"
+
+    @staticmethod
+    def _case_name_from_state(
+        state: dict[str, Any],
+        attribution: dict[str, Any],
+    ) -> str:
+        fault_type = attribution.get("fault_type") or state.get("status", "trace")
+        return f"真实 Trace 回归：{state.get('skill_id', 'unknown')} / {fault_type}"
+
+    @staticmethod
+    def _case_description_from_state(
+        state: dict[str, Any],
+        attribution: dict[str, Any],
+    ) -> str:
+        explanation = attribution.get("agent_reason") or attribution.get("explanation")
+        if explanation:
+            return str(explanation)[:240]
+        execution = state.get("execution") or {}
+        return str(execution.get("summary") or "由真实 Aime Skill Trace 保存的回归用例。")[:240]
+
+    @staticmethod
+    def _skill_preview(skill_content: str, limit: int = 900) -> str:
+        content = skill_content.strip()
+        if len(content) <= limit:
+            return content
+        return content[:limit].rstrip() + "\n...（已截断，预览接口未展示完整 Skill）"
+
+    @staticmethod
+    def _repair_instruction(principle: str, attribution: dict[str, Any]) -> str:
+        t_star = attribution.get("t_star")
+        scope = f"t*={t_star}" if isinstance(t_star, int) else "定位到的失败步骤"
+        return (
+            "## Skill Doctor 修复建议\n"
+            f"- 针对 {scope} 补充约束：{principle}\n"
+            "- 在执行相关 tool 前显式校验关键入参、时间窗口和回退条件。\n"
+            "- 当上游返回空数据或低置信度结果时，输出可解释错误并保留证据。"
+        )
+
+    @staticmethod
+    def _repair_risk(attribution: dict[str, Any]) -> str:
+        confidence = float(attribution.get("confidence") or 0)
+        if attribution.get("cause") not in {"skill", "loader", "routing"}:
+            return "high"
+        if confidence >= 0.85:
+            return "medium"
+        return "high"
+
+    @staticmethod
+    def _repair_summary(action: str, principle: str) -> str:
+        action_copy = {
+            "patch_skill": "修改 Skill 内容",
+            "patch_loader": "修复 Skill 加载逻辑",
+            "patch_routing": "修复 Skill 路由策略",
+            "split_non_skill": "分流为非 Skill 问题",
+        }.get(action, action)
+        return f"{action_copy}：{principle}"
+
+    @staticmethod
+    def _simple_diff(before: str, after: str) -> str:
+        if before == after:
+            return ""
+        lines = []
+        if before:
+            lines.extend(f"- {line}" for line in before.splitlines())
+        if after:
+            lines.extend(f"+ {line}" for line in after.splitlines())
+        return "\n".join(lines)
+
+    @staticmethod
+    def _verification_plan(
+        state: dict[str, Any],
+        attribution: dict[str, Any],
+    ) -> list[str]:
+        skill_id = state.get("skill_id", "目标 Skill")
+        action = attribution.get("action")
+        if action == "split_non_skill":
+            return [
+                "不要直接修改 Skill；先确认平台、tool 或外部依赖是否恢复。",
+                "重新导入同一任务的新 Trace，确认失败不再出现或已被正确分流。",
+                "检查诊断套件中 Non-Skill 用例没有被误判为 Skill 问题。",
+            ]
+        return [
+            f"保存当前 run 为 {skill_id} 的回归用例。",
+            "在 Aime 侧应用修复草案或等价人工修改。",
+            "重新执行同一用户任务并上传新 Trace。",
+            "确认失败断言转为通过，pass_rate 提升且 fault_type 不再是原故障。",
+            "运行默认诊断套件，确认健康 Trace 与 Non-Skill 用例没有回归。",
+        ]
 
     @staticmethod
     def _diagnostic_markdown(name: str, reports: list[dict[str, Any]]) -> str:
@@ -451,6 +723,7 @@ def _default_diagnostic_cases() -> list[DiagnosticCaseRequest]:
                 "case_id": "healthy-aime-fast-path",
                 "name": "健康 Trace 快路径",
                 "description": "成功的 Aime Trace 不应进入归因/修复链路。",
+                "source": "built-in",
                 "trace": {
                     "task": "Summarize healthy trace.",
                     "skill_id": "healthy-skill",
@@ -478,6 +751,7 @@ def _default_diagnostic_cases() -> list[DiagnosticCaseRequest]:
                 "case_id": "skill-content-gap",
                 "name": "Skill 内容缺口",
                 "description": "Skill 已加载但遗漏关键约束，应归因为 skill 内容问题。",
+                "source": "built-in",
                 "trace": {
                     "task": "读取全部订单并汇总营收。",
                     "skill_id": "spreadsheet-summary",
@@ -529,6 +803,7 @@ def _default_diagnostic_cases() -> list[DiagnosticCaseRequest]:
                 "case_id": "loader-missing-skill",
                 "name": "Skill 未加载",
                 "description": "without_skill 基线失败时应归因为 loader/skill_missing。",
+                "source": "built-in",
                 "trace": {
                     "task": "Use the required Skill before planning.",
                     "skill_id": "tdd-workflow",
@@ -567,6 +842,7 @@ def _default_diagnostic_cases() -> list[DiagnosticCaseRequest]:
                 "case_id": "platform-network-failure",
                 "name": "平台网络失败",
                 "description": "网络/平台边界错误应路由为 non-skill。",
+                "source": "built-in",
                 "trace": {
                     "task": "Call external dependency.",
                     "skill_id": "external-api-skill",

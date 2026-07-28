@@ -291,6 +291,7 @@ class DiagnosticCaseRequest(BaseModel):
     case_id: str
     name: str
     description: str = ""
+    source: Literal["built-in", "custom", "saved_run"] = "custom"
     trace: TraceIngestRequest
     expectation: DiagnosticExpectation = Field(default_factory=DiagnosticExpectation)
 
@@ -299,4 +300,20 @@ class DiagnosticSuiteRequest(BaseModel):
     suite_id: str = "core-trace-regression"
     name: str = "Core Trace Regression Suite"
     include_default_cases: bool = True
+    include_saved_cases: bool = True
     cases: list[DiagnosticCaseRequest] = Field(default_factory=list)
+
+
+class SaveDiagnosticCaseRequest(BaseModel):
+    """Persist one existing run as a reusable diagnostic regression case."""
+
+    case_id: str | None = None
+    name: str | None = None
+    description: str | None = None
+    expectation: DiagnosticExpectation = Field(default_factory=DiagnosticExpectation)
+
+
+class RepairPreviewRequest(BaseModel):
+    """Options for generating an auditable repair preview from a run."""
+
+    include_full_skill: bool = False

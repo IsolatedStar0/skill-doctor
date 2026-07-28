@@ -65,6 +65,51 @@ The puck-rule-rca skill correctly identified the anomaly as noise
 
 如果暂时不想改 Aime 侧代码，也可以手动把 puck 派单里保存的 rca_content / rca_detail、加上 tool 调用列表拼一份 JSON，效果一样。
 
+## 方案 A：Aime skill on_finish 直连 HTTP 推送
+
+如果 Aime 侧希望**跳过写临时 JSON 文件**、由 skill 执行结束回调直接 HTTP POST 一次，就用 `scripts/aime_skill_hook.py`。这是 `push_aime_trace.py` 的 in-process 版本：只依赖 stdlib（`urllib.request` / `json` / `os`），可以直接 import 到 Aime skill 的 `on_finish` 回调里。
+
+关键特性：
+- **纯 stdlib**：无第三方依赖，Aime sandbox 直接可用。
+- **绝不抛异常**：桥接失败只打 stderr 日志，不阻塞 skill 主流程。
+- **空 trace 自动丢弃**：`runtime_events` / `tool_calls` / `model_messages` 全空时直接跳过，避免污染 run 列表。
+- **自动读 `.env`**：不传 `endpoint` / `api_key` 时，会依次尝试参数 → 环境变量 → `.env`。
+
+最小接入示例：
+
+```python
+from scripts.aime_skill_hook import push_to_skill_doctor
+
+def on_finish(ctx):
+    push_to_skill_doctor(
+        skill_id       = ctx.skill_id,
+        skill_content  = ctx.skill_body,           # 原文，DeepSeek 会读它
+        runtime_events = ctx.runtime_events,       # [{stage,status,message}, ...]
+        tool_calls     = ctx.tool_calls,           # [{name,status,arguments,result}, ...]
+        model_messages = ctx.model_messages,       # [{role,content}, ...]
+        business_result= ctx.final_output,         # 会挂到 trace_metadata.business_result
+        task           = ctx.user_query,
+        trace_metadata = {"aime_session": ctx.session_id, "aime_assistant": ctx.assistant_id},
+        # endpoint / api_key 可省略，默认取 .env
+    )
+```
+
+冒烟测试（后端跑在 8010、`.env` 已配置）：
+
+```bash
+cd /Users/bytedance/Projects/skill-doctor
+python3 scripts/aime_skill_hook.py
+```
+
+预期 stderr/stdout 里能看到：
+
+```
+[skill-doctor] pushed ok — run_id=lg-xxxxxxxx status=... attribution.source=llm ...
+[skill-doctor] 🤖 <DeepSeek 结论>
+```
+
+如果打印 `skip: ... are all empty`，说明本次 skill 没有可诊断的执行痕迹，属于预期行为。
+
 ## 三、这次到底改了什么
 
 | 位置 | 改动 | 说明 |

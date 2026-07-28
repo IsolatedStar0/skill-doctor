@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  createRepairPreview,
+  saveRunAsDiagnosticCase,
   streamLangGraphRun,
   type LangGraphState,
+  type RepairPreview,
 } from "../lib/langgraph-stream";
 import { useRunStore } from "./RunStore";
 import BusinessResultCard from "./BusinessResultCard";
@@ -83,6 +86,9 @@ export default function LangGraphDashboard() {
   const [uiStatus, setUiStatus] = useState<UiStatus>("idle");
   const { snapshot, setSnapshot } = useRunStore();
   const [error, setError] = useState<string | null>(null);
+  const [caseSaveStatus, setCaseSaveStatus] = useState<string | null>(null);
+  const [repairPreview, setRepairPreview] = useState<RepairPreview | null>(null);
+  const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const abortRef = useRef<AbortController | null>(null);
   const apiUrl =
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
@@ -118,6 +124,9 @@ export default function LangGraphDashboard() {
     abortRef.current = controller;
     setSnapshot(null);
     setError(null);
+    setCaseSaveStatus(null);
+    setRepairPreview(null);
+    setPreviewStatus("idle");
     setUiStatus("running");
     try {
       await streamLangGraphRun(
@@ -154,6 +163,31 @@ export default function LangGraphDashboard() {
   const cancel = () => {
     abortRef.current?.abort();
     abortRef.current = null;
+  };
+
+  const saveCase = async () => {
+    if (!snapshot?.run_id) return;
+    setCaseSaveStatus("保存中...");
+    try {
+      const result = await saveRunAsDiagnosticCase(snapshot.run_id, apiUrl);
+      setCaseSaveStatus(`已保存为回归用例：${result.case.case_id}`);
+    } catch (caught) {
+      setCaseSaveStatus(caught instanceof Error ? caught.message : "保存回归用例失败。");
+    }
+  };
+
+  const previewRepair = async () => {
+    if (!snapshot?.run_id) return;
+    setPreviewStatus("loading");
+    setRepairPreview(null);
+    try {
+      const result = await createRepairPreview(snapshot.run_id, apiUrl);
+      setRepairPreview(result);
+      setPreviewStatus("done");
+    } catch (caught) {
+      setPreviewStatus("error");
+      setCaseSaveStatus(caught instanceof Error ? caught.message : "生成修复预览失败。");
+    }
   };
 
   return (
@@ -270,6 +304,47 @@ export default function LangGraphDashboard() {
 
       {snapshot?.business_result ? (
         <BusinessResultCard result={snapshot.business_result} />
+      ) : null}
+
+      {snapshot?.executor === "trace-ingest" && terminal ? (
+        <article className="panel graph-real-trace-actions">
+          <div className="panel-heading">
+            <span>真实 Trace 资产化</span>
+            <strong>{snapshot.skill_id}</strong>
+          </div>
+          <p>
+            当前 run 来自真实 Aime Trace，可沉淀为回归用例，并基于归因结果生成只读修复预览。
+          </p>
+          <div className="graph-action-row">
+            <button type="button" onClick={() => void saveCase()}>
+              保存为回归用例
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!snapshot.attribution || previewStatus === "loading"}
+              onClick={() => void previewRepair()}
+            >
+              {previewStatus === "loading" ? "生成中" : "生成修复预览"}
+            </button>
+          </div>
+          {caseSaveStatus ? <small>{caseSaveStatus}</small> : null}
+          {repairPreview ? (
+            <div className="repair-preview-card">
+              <div>
+                <span>{repairPreview.repair_type}</span>
+                <strong>风险：{repairPreview.risk}</strong>
+              </div>
+              <p>{repairPreview.principle}</p>
+              <pre>{repairPreview.suggested_patch.diff}</pre>
+              <ol>
+                {repairPreview.verification_plan.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+        </article>
       ) : null}
 
       <article className="graph-timeline panel">

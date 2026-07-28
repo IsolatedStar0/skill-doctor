@@ -15,7 +15,9 @@ from .benchmark import BenchmarkService
 from .models import (
     BenchmarkRequest,
     DiagnosticSuiteRequest,
+    RepairPreviewRequest,
     RunRequest,
+    SaveDiagnosticCaseRequest,
     TraceIngestRequest,
 )
 from .service import RunService
@@ -184,8 +186,12 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                 payload = self._payload()
                 if path in {"/traces", "/runs/upload"}:
                     request = TraceIngestRequest.model_validate(payload)
+                elif path.startswith("/diagnostics/cases/from-run/"):
+                    request = SaveDiagnosticCaseRequest.model_validate(payload)
                 elif path == "/diagnostics":
                     request = DiagnosticSuiteRequest.model_validate(payload)
+                elif path.startswith("/repairs/preview/"):
+                    request = RepairPreviewRequest.model_validate(payload)
                 elif path.startswith("/benchmarks"):
                     request = BenchmarkRequest.model_validate(payload)
                 else:
@@ -210,6 +216,36 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             if path == "/diagnostics":
                 assert isinstance(request, DiagnosticSuiteRequest)
                 self._json(HTTPStatus.OK, service.run_diagnostic_suite(request))
+                return
+            if path.startswith("/diagnostics/cases/from-run/"):
+                assert isinstance(request, SaveDiagnosticCaseRequest)
+                try:
+                    self._json(
+                        HTTPStatus.OK,
+                        service.save_diagnostic_case_from_run(
+                            path.removeprefix("/diagnostics/cases/from-run/"),
+                            request,
+                        ),
+                    )
+                except ValueError as error:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                except FileNotFoundError:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "Run not found."})
+                return
+            if path.startswith("/repairs/preview/"):
+                assert isinstance(request, RepairPreviewRequest)
+                try:
+                    self._json(
+                        HTTPStatus.OK,
+                        service.create_repair_preview(
+                            path.removeprefix("/repairs/preview/"),
+                            request,
+                        ),
+                    )
+                except ValueError as error:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                except FileNotFoundError:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "Run not found."})
                 return
             if path == "/benchmarks/stream":
                 assert isinstance(request, BenchmarkRequest)

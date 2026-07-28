@@ -871,9 +871,9 @@ function DiagnosticsDashboard() {
           <small>会开放 Skill/loader 修复通道</small>
         </article>
         <article className="panel">
-          <span>Non-Skill 路由</span>
-          <strong>{activeReport?.summary.non_skill ?? "—"}</strong>
-          <small>平台、工具或外部原因</small>
+          <span>真实回归用例</span>
+          <strong>{activeReport?.summary.saved_cases ?? "—"}</strong>
+          <small>由真实 Aime Trace 沉淀</small>
         </article>
       </div>
 
@@ -883,7 +883,7 @@ function DiagnosticsDashboard() {
             {activeReport.cases.map((item) => (
               <article className={`panel diagnostics-case ${item.passed ? "passed" : "failed"}`} key={item.case_id}>
                 <div className="panel-heading">
-                  <span>{item.category}</span>
+                  <span>{item.source === "saved_run" ? "真实 Trace" : item.category}</span>
                   <strong>{item.passed ? "通过" : "失败"}</strong>
                 </div>
                 <h3>{item.name}</h3>
