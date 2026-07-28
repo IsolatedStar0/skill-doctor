@@ -1,0 +1,300 @@
+{
+  "run_kind": "benchmark",
+  "run_id": "bm-3b6cef4ac2b0",
+  "parent_run_id": null,
+  "skill_id": "tdd-workflow",
+  "skill_version": "1.0.0",
+  "executor": "fixture",
+  "scenario": "content-gap",
+  "condition": "paired",
+  "attempt": 0,
+  "max_attempts": 0,
+  "status": "completed",
+  "stop_reason": "paired_benchmark_completed",
+  "task": "Use the target Skill to produce a verified implementation plan.",
+  "events": [
+    {
+      "sequence": 1,
+      "stage": "benchmark.started",
+      "status": "completed",
+      "attempt": 0,
+      "message": "Paired benchmark started.",
+      "usage": null,
+      "metadata": {}
+    },
+    {
+      "sequence": 2,
+      "stage": "benchmark.without_skill.started",
+      "status": "completed",
+      "attempt": 0,
+      "message": "Starting without_skill child Run.",
+      "usage": null,
+      "metadata": {}
+    },
+    {
+      "sequence": 3,
+      "stage": "benchmark.without_skill.completed",
+      "status": "completed",
+      "attempt": 0,
+      "message": "Completed child Run lg-ffeaec000d4f.",
+      "usage": null,
+      "metadata": {}
+    },
+    {
+      "sequence": 4,
+      "stage": "benchmark.with_skill.started",
+      "status": "completed",
+      "attempt": 0,
+      "message": "Starting with_skill child Run.",
+      "usage": null,
+      "metadata": {}
+    },
+    {
+      "sequence": 5,
+      "stage": "benchmark.with_skill.completed",
+      "status": "completed",
+      "attempt": 0,
+      "message": "Completed child Run lg-2bde1283e4ba.",
+      "usage": null,
+      "metadata": {}
+    },
+    {
+      "sequence": 6,
+      "stage": "benchmark.completed",
+      "status": "completed",
+      "attempt": 0,
+      "message": "Paired metrics are ready.",
+      "usage": null,
+      "metadata": {}
+    }
+  ],
+  "control_run_id": "lg-ffeaec000d4f",
+  "treatment_run_id": "lg-2bde1283e4ba",
+  "control": {
+    "id": "lg-ffeaec000d4f",
+    "condition": "without_skill",
+    "status": "completed",
+    "executor": "fixture",
+    "taskKind": "knowledge-probe",
+    "startedAt": "2026-07-28T06:06:27.905496+00:00",
+    "durationMs": 960,
+    "usage": {
+      "inputTokens": 1050,
+      "outputTokens": 180,
+      "cachedInputTokens": 410,
+      "reasoningTokens": 82,
+      "totalTokens": 1230
+    },
+    "verifier": {
+      "framework": "pytest",
+      "passed": 1,
+      "failed": 1,
+      "total": 2,
+      "passRate": 0.5,
+      "assertions": [
+        {
+          "id": "full-input-coverage",
+          "label": "The procedure only processed preview rows.",
+          "source": "skill",
+          "passed": false,
+          "matched": "The procedure only processed preview rows."
+        },
+        {
+          "id": "output-contract",
+          "label": "The requested output schema is valid.",
+          "source": "task",
+          "passed": true,
+          "matched": "The requested output schema is valid."
+        }
+      ]
+    },
+    "artifacts": {
+      "evidenceSnapshot": "reports/langgraph/lg-ffeaec000d4f.json",
+      "codexJsonl": "",
+      "pytestOutput": "",
+      "gitDiff": ""
+    },
+    "error": null
+  },
+  "treatment": {
+    "id": "lg-2bde1283e4ba",
+    "condition": "with_skill",
+    "status": "completed",
+    "executor": "fixture",
+    "taskKind": "knowledge-probe",
+    "startedAt": "2026-07-28T06:06:27.942077+00:00",
+    "durationMs": 1180,
+    "usage": {
+      "inputTokens": 1420,
+      "outputTokens": 260,
+      "cachedInputTokens": 620,
+      "reasoningTokens": 96,
+      "totalTokens": 1680
+    },
+    "verifier": {
+      "framework": "pytest",
+      "passed": 2,
+      "failed": 0,
+      "total": 2,
+      "passRate": 1.0,
+      "assertions": [
+        {
+          "id": "full-input-coverage",
+          "label": "All records were processed.",
+          "source": "skill",
+          "passed": true,
+          "matched": "All records were processed."
+        },
+        {
+          "id": "output-contract",
+          "label": "The requested output schema is valid.",
+          "source": "task",
+          "passed": true,
+          "matched": "The requested output schema is valid."
+        }
+      ]
+    },
+    "artifacts": {
+      "evidenceSnapshot": "reports/langgraph/lg-2bde1283e4ba.json",
+      "codexJsonl": "",
+      "pytestOutput": "",
+      "gitDiff": ""
+    },
+    "error": null
+  },
+  "report": {
+    "schemaVersion": "1.0",
+    "runId": "bm-3b6cef4ac2b0",
+    "generatedAt": "2026-07-28T06:06:27.943284+00:00",
+    "executor": "fixture",
+    "taskKind": "knowledge-probe",
+    "isModelResult": false,
+    "dataset": {
+      "name": "Skill Doctor Dynamic Pair",
+      "sha256": "",
+      "selectedSkills": [
+        "tdd-workflow"
+      ]
+    },
+    "summary": {
+      "pairs": 1,
+      "completedPairs": 1,
+      "improved": 1,
+      "tied": 0,
+      "regressed": 0,
+      "averagePassRateDelta": 0.5,
+      "averageTokenOverheadRate": 0.36585365853658536,
+      "averageDurationDeltaMs": 220,
+      "regressionRate": 0.0
+    },
+    "pairs": [
+      {
+        "skillId": "tdd-workflow",
+        "name": "Tdd Workflow",
+        "dimension": "dynamic-paired-run",
+        "control": {
+          "id": "lg-ffeaec000d4f",
+          "condition": "without_skill",
+          "status": "completed",
+          "executor": "fixture",
+          "taskKind": "knowledge-probe",
+          "startedAt": "2026-07-28T06:06:27.905496+00:00",
+          "durationMs": 960,
+          "usage": {
+            "inputTokens": 1050,
+            "outputTokens": 180,
+            "cachedInputTokens": 410,
+            "reasoningTokens": 82,
+            "totalTokens": 1230
+          },
+          "verifier": {
+            "framework": "pytest",
+            "passed": 1,
+            "failed": 1,
+            "total": 2,
+            "passRate": 0.5,
+            "assertions": [
+              {
+                "id": "full-input-coverage",
+                "label": "The procedure only processed preview rows.",
+                "source": "skill",
+                "passed": false,
+                "matched": "The procedure only processed preview rows."
+              },
+              {
+                "id": "output-contract",
+                "label": "The requested output schema is valid.",
+                "source": "task",
+                "passed": true,
+                "matched": "The requested output schema is valid."
+              }
+            ]
+          },
+          "artifacts": {
+            "evidenceSnapshot": "reports/langgraph/lg-ffeaec000d4f.json",
+            "codexJsonl": "",
+            "pytestOutput": "",
+            "gitDiff": ""
+          },
+          "error": null
+        },
+        "treatment": {
+          "id": "lg-2bde1283e4ba",
+          "condition": "with_skill",
+          "status": "completed",
+          "executor": "fixture",
+          "taskKind": "knowledge-probe",
+          "startedAt": "2026-07-28T06:06:27.942077+00:00",
+          "durationMs": 1180,
+          "usage": {
+            "inputTokens": 1420,
+            "outputTokens": 260,
+            "cachedInputTokens": 620,
+            "reasoningTokens": 96,
+            "totalTokens": 1680
+          },
+          "verifier": {
+            "framework": "pytest",
+            "passed": 2,
+            "failed": 0,
+            "total": 2,
+            "passRate": 1.0,
+            "assertions": [
+              {
+                "id": "full-input-coverage",
+                "label": "All records were processed.",
+                "source": "skill",
+                "passed": true,
+                "matched": "All records were processed."
+              },
+              {
+                "id": "output-contract",
+                "label": "The requested output schema is valid.",
+                "source": "task",
+                "passed": true,
+                "matched": "The requested output schema is valid."
+              }
+            ]
+          },
+          "artifacts": {
+            "evidenceSnapshot": "reports/langgraph/lg-2bde1283e4ba.json",
+            "codexJsonl": "",
+            "pytestOutput": "",
+            "gitDiff": ""
+          },
+          "error": null
+        },
+        "comparison": {
+          "outcome": "improved",
+          "passRateDelta": 0.5,
+          "tokenDelta": 450,
+          "tokenOverheadRate": 0.36585365853658536,
+          "durationDeltaMs": 220,
+          "regressionRate": 0.0,
+          "regressedAssertionIds": []
+        }
+      }
+    ]
+  },
+  "error": null
+}
