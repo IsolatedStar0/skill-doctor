@@ -10,7 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .benchmark import BenchmarkService
-from .models import BenchmarkRequest, RunRequest, TraceIngestRequest
+from .models import (
+    BenchmarkRequest,
+    DiagnosticSuiteRequest,
+    RunRequest,
+    TraceIngestRequest,
+)
 from .service import RunService
 
 app = FastAPI(
@@ -152,3 +157,13 @@ def get_benchmark(benchmark_id: str) -> dict:
             status_code=404,
             detail="Benchmark not found.",
         ) from error
+
+
+@app.post("/diagnostics")
+def run_diagnostics(request: DiagnosticSuiteRequest) -> dict:
+    return service.run_diagnostic_suite(request)
+
+
+@app.get("/diagnostics/default")
+def run_default_diagnostics() -> dict:
+    return service.run_diagnostic_suite(DiagnosticSuiteRequest())

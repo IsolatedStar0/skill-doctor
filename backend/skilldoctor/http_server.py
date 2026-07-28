@@ -12,7 +12,12 @@ from urllib.parse import urlparse
 from pydantic import ValidationError
 
 from .benchmark import BenchmarkService
-from .models import BenchmarkRequest, RunRequest, TraceIngestRequest
+from .models import (
+    BenchmarkRequest,
+    DiagnosticSuiteRequest,
+    RunRequest,
+    TraceIngestRequest,
+)
 from .service import RunService
 
 
@@ -146,6 +151,9 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                     {"benchmarks": benchmarks.list()},
                 )
                 return
+            if path == "/diagnostics/default":
+                self._json(HTTPStatus.OK, service.run_diagnostic_suite())
+                return
             if path.startswith("/benchmarks/"):
                 try:
                     self._json(
@@ -176,6 +184,8 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                 payload = self._payload()
                 if path in {"/traces", "/runs/upload"}:
                     request = TraceIngestRequest.model_validate(payload)
+                elif path == "/diagnostics":
+                    request = DiagnosticSuiteRequest.model_validate(payload)
                 elif path.startswith("/benchmarks"):
                     request = BenchmarkRequest.model_validate(payload)
                 else:
@@ -196,6 +206,10 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             if path == "/benchmarks":
                 assert isinstance(request, BenchmarkRequest)
                 self._json(HTTPStatus.OK, benchmarks.run(request))
+                return
+            if path == "/diagnostics":
+                assert isinstance(request, DiagnosticSuiteRequest)
+                self._json(HTTPStatus.OK, service.run_diagnostic_suite(request))
                 return
             if path == "/benchmarks/stream":
                 assert isinstance(request, BenchmarkRequest)

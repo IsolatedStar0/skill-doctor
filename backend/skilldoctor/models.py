@@ -264,3 +264,39 @@ class BenchmarkRequest(BaseModel):
         "high",
         "xhigh",
     ] = "medium"
+
+
+class DiagnosticExpectation(BaseModel):
+    """Expected outcome for one trace regression case."""
+
+    status: Literal["passed", "failed"] | None = None
+    cause: Literal["skill", "routing", "loader", "tool", "platform"] | None = None
+    fault_type: Literal[
+        "skill_wrong",
+        "skill_missing",
+        "reasoning_wrong",
+        "unknown",
+    ] | None = None
+    action: Literal[
+        "patch_skill",
+        "patch_routing",
+        "patch_loader",
+        "split_non_skill",
+    ] | None = None
+    should_repair: bool | None = None
+    should_call_llm: bool | None = None
+
+
+class DiagnosticCaseRequest(BaseModel):
+    case_id: str
+    name: str
+    description: str = ""
+    trace: TraceIngestRequest
+    expectation: DiagnosticExpectation = Field(default_factory=DiagnosticExpectation)
+
+
+class DiagnosticSuiteRequest(BaseModel):
+    suite_id: str = "core-trace-regression"
+    name: str = "Core Trace Regression Suite"
+    include_default_cases: bool = True
+    cases: list[DiagnosticCaseRequest] = Field(default_factory=list)

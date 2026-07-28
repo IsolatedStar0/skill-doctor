@@ -16,8 +16,10 @@ import {
 } from "../lib/trace-adapter";
 import type { PairedBenchmarkReport } from "../lib/benchmark-engine";
 import {
+  runDefaultDiagnostics,
   streamBenchmarkRun,
   type BenchmarkState,
+  type DiagnosticSuiteReport,
   type LangGraphState,
   type RunSummary,
 } from "../lib/langgraph-stream";
@@ -36,6 +38,7 @@ type View =
   | "diagnosis"
   | "patch"
   | "benchmark"
+  | "diagnostics"
   | "orchestrator";
 
 const views: { id: View; label: string; eyebrow: string }[] = [
@@ -45,7 +48,8 @@ const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "diagnosis", label: "故障归因", eyebrow: "03" },
   { id: "patch", label: "修复验证", eyebrow: "04" },
   { id: "benchmark", label: "配对评测", eyebrow: "05" },
-  { id: "orchestrator", label: "自愈链路", eyebrow: "06" },
+  { id: "diagnostics", label: "诊断报告", eyebrow: "06" },
+  { id: "orchestrator", label: "自愈链路", eyebrow: "07" },
 ];
 
 const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
@@ -809,6 +813,124 @@ function BenchmarkDashboard({
   );
 }
 
+function DiagnosticsDashboard() {
+  const [report, setReport] = useState<DiagnosticSuiteReport | null>(null);
+  const [status, setStatus] = useState<"idle" | "running" | "completed" | "failed">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const runDiagnostics = async () => {
+    setStatus("running");
+    setError(null);
+    try {
+      const next = await runDefaultDiagnostics();
+      setReport(next);
+      setStatus(next.status === "passed" ? "completed" : "failed");
+    } catch (caught) {
+      setStatus("failed");
+      setError(caught instanceof Error ? caught.message : "诊断套件运行失败。");
+    }
+  };
+
+  const activeReport = report;
+  return (
+    <section className="diagnostics-view">
+      <div className="section-intro diagnostics-intro">
+        <div>
+          <span className="kicker">Trace 回归套件 / 可解释报告</span>
+          <h2>
+            批量验证多类 Agent Skill 故障，生成<em>可复现诊断报告。</em>
+          </h2>
+        </div>
+        <button
+          type="button"
+          className="run-button diagnostics-run-button"
+          disabled={status === "running"}
+          onClick={() => void runDiagnostics()}
+        >
+          <span>{status === "running" ? "诊断运行中" : "运行默认套件"}</span>
+          <b>↗</b>
+        </button>
+      </div>
+
+      {error ? <div className="graph-error">{error}</div> : null}
+
+      <div className="diagnostics-kpis">
+        <article className="panel">
+          <span>套件状态</span>
+          <strong>{activeReport?.status === "passed" ? "通过" : status === "running" ? "运行中" : "待运行"}</strong>
+          <small>{activeReport?.name ?? "Core Trace Regression Suite"}</small>
+        </article>
+        <article className="panel">
+          <span>通过率</span>
+          <strong>{activeReport ? plainPercent(activeReport.summary.pass_rate) : "—"}</strong>
+          <small>{activeReport ? `${activeReport.summary.passed}/${activeReport.summary.total} 个用例通过` : "等待运行"}</small>
+        </article>
+        <article className="panel">
+          <span>可修复用例</span>
+          <strong>{activeReport?.summary.repairable ?? "—"}</strong>
+          <small>会开放 Skill/loader 修复通道</small>
+        </article>
+        <article className="panel">
+          <span>Non-Skill 路由</span>
+          <strong>{activeReport?.summary.non_skill ?? "—"}</strong>
+          <small>平台、工具或外部原因</small>
+        </article>
+      </div>
+
+      {activeReport ? (
+        <>
+          <div className="diagnostics-case-grid">
+            {activeReport.cases.map((item) => (
+              <article className={`panel diagnostics-case ${item.passed ? "passed" : "failed"}`} key={item.case_id}>
+                <div className="panel-heading">
+                  <span>{item.category}</span>
+                  <strong>{item.passed ? "通过" : "失败"}</strong>
+                </div>
+                <h3>{item.name}</h3>
+                <p>{item.description}</p>
+                <dl>
+                  <div>
+                    <dt>Run</dt>
+                    <dd>{item.run_id}</dd>
+                  </div>
+                  <div>
+                    <dt>归因</dt>
+                    <dd>{item.attribution.cause} / {item.attribution.fault_type}</dd>
+                  </div>
+                  <div>
+                    <dt>动作</dt>
+                    <dd>{item.attribution.action}</dd>
+                  </div>
+                </dl>
+                <blockquote>{item.attribution.explanation}</blockquote>
+                <div className="diagnostics-checks">
+                  {item.checks.map((check) => (
+                    <span className={check.passed ? "passed" : "failed"} key={check.name}>
+                      {check.passed ? "✓" : "!"} {check.name}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+          <article className="panel diagnostics-markdown">
+            <div className="panel-heading">
+              <span>Markdown 报告</span>
+              <strong>可复制</strong>
+            </div>
+            <pre>{activeReport.markdown}</pre>
+          </article>
+        </>
+      ) : (
+        <article className="panel diagnostics-empty">
+          <h3>默认套件覆盖 4 条核心链路</h3>
+          <p>健康 Trace 快路径、Skill 内容缺口、Skill 未加载、平台网络失败。运行后会展示每个用例的归因、修复策略、期望检查和 Markdown 报告。</p>
+        </article>
+      )}
+    </section>
+  );
+}
+
 export default function DemoApp() {
   const {
     snapshot,
@@ -1102,7 +1224,7 @@ export default function DemoApp() {
           </div>
         )}
 
-        {view !== "benchmark" && view !== "orchestrator" && (
+        {view !== "benchmark" && view !== "diagnostics" && view !== "orchestrator" && (
           <>
             <section
               className="scenario-switcher"
@@ -1322,6 +1444,8 @@ export default function DemoApp() {
             onOpenChild={(runId) => void openChildRun(runId)}
           />
         )}
+
+        {view === "diagnostics" && <DiagnosticsDashboard />}
 
         {view === "orchestrator" && <LangGraphDashboard />}
 

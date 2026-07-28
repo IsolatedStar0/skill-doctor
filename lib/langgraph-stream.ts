@@ -178,6 +178,64 @@ export type BenchmarkState = {
   error: string | null;
 };
 
+export type DiagnosticCaseReport = {
+  case_id: string;
+  name: string;
+  description: string;
+  passed: boolean;
+  category: "healthy" | "skill" | "non_skill";
+  repairable: boolean;
+  run_id: string;
+  status: string;
+  stop_reason: string;
+  skill_id: string;
+  agent_source: "llm" | "rule-based" | "none";
+  attribution: {
+    taxonomy: string;
+    cause: string;
+    fault_type: string;
+    action: string;
+    confidence: number;
+    explanation: string;
+  };
+  repair: {
+    kind: string;
+    revision_type: string;
+    principle: string;
+  } | null;
+  verification: {
+    decision: string;
+    pass_rate_delta: number;
+    regression_rate: number;
+    reasons: string[];
+  };
+  checks: Array<{
+    name: string;
+    expected: unknown;
+    actual: unknown;
+    passed: boolean;
+  }>;
+};
+
+export type DiagnosticSuiteReport = {
+  schema_version: "1.0";
+  suite_id: string;
+  name: string;
+  generated_at: string;
+  status: "passed" | "failed";
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    pass_rate: number;
+    repairable: number;
+    non_skill: number;
+    llm_authored: number;
+  };
+  cases: DiagnosticCaseReport[];
+  markdown: string;
+};
+
 export type RunRegistryEvent = {
   type: "run.updated";
   updated_at: string;
@@ -228,6 +286,14 @@ export async function getBenchmarkRun(runId: string, value?: string) {
     throw new Error(`Benchmark request failed with ${response.status}.`);
   }
   return (await response.json()) as BenchmarkState;
+}
+
+export async function runDefaultDiagnostics(value?: string) {
+  const response = await fetch(`${apiBaseUrl(value)}/diagnostics/default`);
+  if (!response.ok) {
+    throw new Error(`Diagnostic request failed with ${response.status}.`);
+  }
+  return (await response.json()) as DiagnosticSuiteReport;
 }
 
 export async function streamBenchmarkRun(

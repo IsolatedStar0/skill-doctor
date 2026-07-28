@@ -11,7 +11,14 @@ from uuid import uuid4
 
 from .graph import build_agent_graph
 from .llm import build_deepseek_client
-from .models import AgentState, RunEvent, RunRequest, TraceIngestRequest
+from .models import (
+    AgentState,
+    DiagnosticCaseRequest,
+    DiagnosticSuiteRequest,
+    RunEvent,
+    RunRequest,
+    TraceIngestRequest,
+)
 from .observability import (
     LangSmithRunExporter,
     create_observability_exporter,
@@ -125,6 +132,35 @@ class RunService:
             raise RuntimeError("Trace ingest completed without a state snapshot.")
         return latest
 
+    def run_diagnostic_suite(
+        self,
+        request: DiagnosticSuiteRequest | None = None,
+    ) -> dict[str, Any]:
+        suite = request or DiagnosticSuiteRequest()
+        cases = [*(_default_diagnostic_cases() if suite.include_default_cases else []), *suite.cases]
+        started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        reports = [self._run_diagnostic_case(case) for case in cases]
+        passed = sum(1 for item in reports if item["passed"])
+        failed = len(reports) - passed
+        return {
+            "schema_version": "1.0",
+            "suite_id": suite.suite_id,
+            "name": suite.name,
+            "generated_at": started_at,
+            "status": "passed" if failed == 0 else "failed",
+            "summary": {
+                "total": len(reports),
+                "passed": passed,
+                "failed": failed,
+                "pass_rate": passed / len(reports) if reports else 1.0,
+                "repairable": sum(1 for item in reports if item["repairable"]),
+                "non_skill": sum(1 for item in reports if item["category"] == "non_skill"),
+                "llm_authored": sum(1 for item in reports if item["agent_source"] == "llm"),
+            },
+            "cases": reports,
+            "markdown": self._diagnostic_markdown(suite.name, reports),
+        }
+
     def stream_ingested_trace(
         self,
         request: TraceIngestRequest,
@@ -152,6 +188,119 @@ class RunService:
             UploadedTraceWorker(request),
             extra_state=extra_state,
         )
+
+    def _run_diagnostic_case(self, case: DiagnosticCaseRequest) -> dict[str, Any]:
+        state = self.ingest_trace(case.trace)
+        attribution = state.get("attribution") or {}
+        repair_patch = state.get("repair_patch")
+        verification = state.get("verification") or {}
+        expectation = case.expectation
+        checks: list[dict[str, Any]] = []
+
+        def check(name: str, expected: Any, actual: Any) -> None:
+            if expected is None:
+                return
+            checks.append(
+                {
+                    "name": name,
+                    "expected": expected,
+                    "actual": actual,
+                    "passed": expected == actual,
+                }
+            )
+
+        check("status", expectation.status, state.get("status"))
+        check("cause", expectation.cause, attribution.get("cause"))
+        check("fault_type", expectation.fault_type, attribution.get("fault_type"))
+        check("action", expectation.action, attribution.get("action"))
+        check("should_repair", expectation.should_repair, repair_patch is not None)
+        check(
+            "should_call_llm",
+            expectation.should_call_llm,
+            attribution.get("agent_source") == "llm",
+        )
+
+        if not checks:
+            checks.append(
+                {
+                    "name": "state_completed",
+                    "expected": "terminal_state",
+                    "actual": state.get("status"),
+                    "passed": state.get("status") in {"passed", "failed"},
+                }
+            )
+        category = (
+            "healthy"
+            if state.get("status") == "passed" and not attribution
+            else "skill"
+            if attribution.get("cause") in {"skill", "loader", "routing"}
+            else "non_skill"
+        )
+        return {
+            "case_id": case.case_id,
+            "name": case.name,
+            "description": case.description,
+            "passed": all(item["passed"] for item in checks),
+            "category": category,
+            "repairable": repair_patch is not None,
+            "run_id": state["run_id"],
+            "status": state.get("status"),
+            "stop_reason": state.get("stop_reason", ""),
+            "skill_id": state.get("skill_id"),
+            "agent_source": attribution.get("agent_source", "none") if attribution else "none",
+            "attribution": {
+                "taxonomy": attribution.get("taxonomy", "Healthy Trace"),
+                "cause": attribution.get("cause", "none"),
+                "fault_type": attribution.get("fault_type", "none"),
+                "action": attribution.get("action", "none"),
+                "confidence": attribution.get("confidence", 1.0 if state.get("status") == "passed" else 0.0),
+                "explanation": attribution.get("explanation", "Trace completed without attribution."),
+            },
+            "repair": (
+                {
+                    "kind": repair_patch.get("kind"),
+                    "revision_type": repair_patch.get("revision_type", ""),
+                    "principle": repair_patch.get("principle", ""),
+                }
+                if repair_patch
+                else None
+            ),
+            "verification": {
+                "decision": verification.get("decision", "N/A"),
+                "pass_rate_delta": verification.get("pass_rate_delta", 0),
+                "regression_rate": verification.get("regression_rate", 0),
+                "reasons": verification.get("reasons", []),
+            },
+            "checks": checks,
+        }
+
+    @staticmethod
+    def _diagnostic_markdown(name: str, reports: list[dict[str, Any]]) -> str:
+        passed = sum(1 for item in reports if item["passed"])
+        lines = [
+            f"# {name}",
+            "",
+            f"- 用例总数：{len(reports)}",
+            f"- 通过：{passed}",
+            f"- 失败：{len(reports) - passed}",
+            "",
+        ]
+        for item in reports:
+            icon = "✅" if item["passed"] else "❌"
+            attr = item["attribution"]
+            lines.extend(
+                [
+                    f"## {icon} {item['name']}",
+                    "",
+                    f"- Run：`{item['run_id']}`",
+                    f"- 状态：{item['status']} / {item['stop_reason']}",
+                    f"- 归因：{attr['taxonomy']} · {attr['cause']} · {attr['fault_type']}",
+                    f"- 动作：{attr['action']}",
+                    f"- 解释：{attr['explanation']}",
+                    "",
+                ]
+            )
+        return "\n".join(lines).strip() + "\n"
 
     def stream(self, request: RunRequest) -> Iterator[dict[str, Any]]:
         yield from self._stream_with_worker(request, self._worker(request))
@@ -291,3 +440,164 @@ class RunService:
             f"{json.dumps(result, ensure_ascii=False, indent=2)}\n",
             encoding="utf-8",
         )
+
+
+def _default_diagnostic_cases() -> list[DiagnosticCaseRequest]:
+    """Built-in trace regression cases that cover the main routing branches."""
+
+    return [
+        DiagnosticCaseRequest.model_validate(
+            {
+                "case_id": "healthy-aime-fast-path",
+                "name": "健康 Trace 快路径",
+                "description": "成功的 Aime Trace 不应进入归因/修复链路。",
+                "trace": {
+                    "task": "Summarize healthy trace.",
+                    "skill_id": "healthy-skill",
+                    "skill_version": "1.0.0",
+                    "skill_content": "Follow the safe path.",
+                    "repair_enabled": False,
+                    "runtime_events": [
+                        {
+                            "stage": "aime.done",
+                            "status": "completed",
+                            "message": "Aime skill finished successfully.",
+                        }
+                    ],
+                    "trace_metadata": {"confidence": 0.92},
+                },
+                "expectation": {
+                    "status": "passed",
+                    "should_repair": False,
+                    "should_call_llm": False,
+                },
+            }
+        ),
+        DiagnosticCaseRequest.model_validate(
+            {
+                "case_id": "skill-content-gap",
+                "name": "Skill 内容缺口",
+                "description": "Skill 已加载但遗漏关键约束，应归因为 skill 内容问题。",
+                "trace": {
+                    "task": "读取全部订单并汇总营收。",
+                    "skill_id": "spreadsheet-summary",
+                    "skill_version": "1.2.0",
+                    "skill_content": "预览输入并生成摘要。",
+                    "repair_enabled": True,
+                    "max_attempts": 1,
+                    "execution": {
+                        "executor": "aime-skill-trace",
+                        "condition": "with_skill",
+                        "passed": False,
+                        "pass_rate": 0.5,
+                        "duration_ms": 960,
+                        "summary": "Only preview rows were processed.",
+                        "assertions": [
+                            {
+                                "id": "full-input-coverage",
+                                "source": "skill",
+                                "passed": False,
+                                "detail": "The procedure only processed preview rows.",
+                            },
+                            {
+                                "id": "output-contract",
+                                "source": "task",
+                                "passed": True,
+                                "detail": "The output schema is valid.",
+                            },
+                        ],
+                        "runtime_events": [
+                            {
+                                "stage": "csv.preview",
+                                "status": "completed",
+                                "message": "Read 20/100 rows.",
+                            }
+                        ],
+                    },
+                },
+                "expectation": {
+                    "status": "failed",
+                    "cause": "skill",
+                    "fault_type": "skill_wrong",
+                    "action": "patch_skill",
+                    "should_repair": True,
+                },
+            }
+        ),
+        DiagnosticCaseRequest.model_validate(
+            {
+                "case_id": "loader-missing-skill",
+                "name": "Skill 未加载",
+                "description": "without_skill 基线失败时应归因为 loader/skill_missing。",
+                "trace": {
+                    "task": "Use the required Skill before planning.",
+                    "skill_id": "tdd-workflow",
+                    "skill_version": "1.0.0",
+                    "skill_content": "Follow TDD workflow.",
+                    "condition": "without_skill",
+                    "repair_enabled": False,
+                    "execution": {
+                        "executor": "aime-skill-trace",
+                        "condition": "without_skill",
+                        "passed": False,
+                        "pass_rate": 0.0,
+                        "duration_ms": 500,
+                        "summary": "Required skill was not loaded.",
+                        "assertions": [
+                            {
+                                "id": "skill-loaded",
+                                "source": "skill",
+                                "passed": False,
+                                "detail": "The target Skill was absent.",
+                            }
+                        ],
+                    },
+                },
+                "expectation": {
+                    "status": "failed",
+                    "cause": "loader",
+                    "fault_type": "skill_missing",
+                    "action": "patch_loader",
+                    "should_repair": False,
+                },
+            }
+        ),
+        DiagnosticCaseRequest.model_validate(
+            {
+                "case_id": "platform-network-failure",
+                "name": "平台网络失败",
+                "description": "网络/平台边界错误应路由为 non-skill。",
+                "trace": {
+                    "task": "Call external dependency.",
+                    "skill_id": "external-api-skill",
+                    "skill_version": "1.0.0",
+                    "skill_content": "Retry transient dependency failures.",
+                    "repair_enabled": False,
+                    "execution": {
+                        "executor": "aime-skill-trace",
+                        "condition": "with_skill",
+                        "passed": False,
+                        "pass_rate": 0.0,
+                        "duration_ms": 420,
+                        "summary": "Network connection reset.",
+                        "error": "network connection reset",
+                        "assertions": [
+                            {
+                                "id": "external-service",
+                                "source": "system",
+                                "passed": False,
+                                "detail": "Upstream service connection was reset.",
+                            }
+                        ],
+                    },
+                },
+                "expectation": {
+                    "status": "failed",
+                    "cause": "platform",
+                    "fault_type": "reasoning_wrong",
+                    "action": "split_non_skill",
+                    "should_repair": False,
+                },
+            }
+        ),
+    ]

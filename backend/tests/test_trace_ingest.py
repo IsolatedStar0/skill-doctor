@@ -160,6 +160,60 @@ def test_trace_ingest_passed_aime_trace_keeps_fast_path(tmp_path: Path) -> None:
     assert calls == []
 
 
+def test_default_diagnostic_suite_covers_core_trace_routes(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    service.adaptor_llm_client = None
+
+    report = service.run_diagnostic_suite()
+
+    assert report["status"] == "passed"
+    assert report["summary"] == {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "pass_rate": 1.0,
+        "repairable": 1,
+        "non_skill": 1,
+        "llm_authored": 0,
+    }
+    by_id = {item["case_id"]: item for item in report["cases"]}
+    assert by_id["healthy-aime-fast-path"]["status"] == "passed"
+    assert by_id["healthy-aime-fast-path"]["repairable"] is False
+    assert by_id["skill-content-gap"]["attribution"]["cause"] == "skill"
+    assert by_id["skill-content-gap"]["repairable"] is True
+    assert by_id["loader-missing-skill"]["attribution"]["cause"] == "loader"
+    assert by_id["platform-network-failure"]["attribution"]["cause"] == "platform"
+    assert "# Core Trace Regression Suite" in report["markdown"]
+
+
+def test_diagnostic_suite_http_endpoint(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    service.adaptor_llm_client = None
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request("GET", "/diagnostics/default")
+        response = connection.getresponse()
+        report = json.loads(response.read().decode("utf-8"))
+
+        assert response.status == 200
+        assert report["status"] == "passed"
+        assert report["summary"]["total"] == 4
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def _raw_puck_trace_payload() -> str:
     """A raw puck-rule-rca style trace with no normalized execution."""
 
