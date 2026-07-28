@@ -33,6 +33,35 @@ const stageCopy: Record<string, string> = {
   "codex.error": "执行错误",
 };
 
+const statusCopy: Record<string, string> = {
+  idle: "待启动",
+  running: "运行中",
+  passed: "已通过",
+  failed: "未通过",
+  error: "连接异常",
+  completed: "已完成",
+  started: "已开始",
+  skipped: "已跳过",
+};
+
+const modeCopy: Record<RunMode, { eyebrow: string; title: string }> = {
+  fixture: { eyebrow: "离线模式", title: "确定性自修复" },
+  replay: { eyebrow: "证据重放", title: "真实配对重放" },
+  codex: { eyebrow: "Codex Live", title: "真实 Agent 执行" },
+};
+
+const sourceCopy = {
+  graph: "状态图",
+  sdk: "SDK 事件",
+};
+
+const faultTypeCopy: Record<string, string> = {
+  skill_wrong: "Skill 内容错误",
+  skill_missing: "Skill 缺失",
+  reasoning_wrong: "推理/平台问题",
+  unknown: "未知类型",
+};
+
 function percent(value: number | undefined) {
   return value === undefined ? "—" : `${Math.round(value * 100)}%`;
 }
@@ -131,7 +160,7 @@ export default function LangGraphDashboard() {
     <section className="langgraph-view">
       <div className="section-intro langgraph-intro">
         <div>
-          <span className="kicker">LIVE STATE GRAPH / NDJSON STREAM</span>
+          <span className="kicker">实时状态图 / NDJSON 流</span>
           <h2>
             从第一次失败到修复升级，
             <em>逐节点观察 Agent 自愈。</em>
@@ -139,7 +168,7 @@ export default function LangGraphDashboard() {
         </div>
         <div className={`graph-status ${displayedStatus}`}>
           <i />
-          <span>{displayedStatus.toUpperCase()}</span>
+          <span>{statusCopy[displayedStatus] ?? displayedStatus}</span>
           <small>{snapshot?.run_id ?? "等待启动"}</small>
         </div>
       </div>
@@ -152,8 +181,8 @@ export default function LangGraphDashboard() {
             onClick={() => setMode("fixture")}
             disabled={uiStatus === "running"}
           >
-            <span>OFFLINE</span>
-            确定性自修复
+            <span>{modeCopy.fixture.eyebrow}</span>
+            {modeCopy.fixture.title}
           </button>
           <button
             type="button"
@@ -161,8 +190,8 @@ export default function LangGraphDashboard() {
             onClick={() => setMode("replay")}
             disabled={uiStatus === "running"}
           >
-            <span>CODEX EVIDENCE</span>
-            真实配对重放
+            <span>{modeCopy.replay.eyebrow}</span>
+            {modeCopy.replay.title}
           </button>
           <button
             type="button"
@@ -170,12 +199,12 @@ export default function LangGraphDashboard() {
             onClick={() => setMode("codex")}
             disabled={uiStatus === "running"}
           >
-            <span>CODEX SDK LIVE</span>
-            真实 Agent 执行
+            <span>{modeCopy.codex.eyebrow}</span>
+            {modeCopy.codex.title}
           </button>
         </div>
         <div className="graph-api">
-          <span>STREAM ENDPOINT</span>
+          <span>流式接口</span>
           <code>{apiUrl}/runs/stream</code>
           {snapshot?.observability?.trace_url ? (
             <a
@@ -183,11 +212,11 @@ export default function LangGraphDashboard() {
               target="_blank"
               rel="noreferrer"
             >
-              OPEN IN LANGSMITH ↗
+              在 LangSmith 查看 ↗
             </a>
           ) : (
             <small>
-              LANGSMITH {snapshot?.observability?.status ?? "OPTIONAL"}
+              LangSmith {snapshot?.observability?.status ?? "可选"}
             </small>
           )}
         </div>
@@ -204,7 +233,7 @@ export default function LangGraphDashboard() {
 
       {error && (
         <div className="graph-error" role="alert">
-          <strong>无法连接 Python control plane</strong>
+          <strong>无法连接 Python 控制面</strong>
           <span>{error}</span>
           <code>npm run agent:api</code>
         </div>
@@ -216,25 +245,25 @@ export default function LangGraphDashboard() {
 
       <div className="graph-kpis">
         <article className="panel">
-          <span>ATTEMPT</span>
+          <span>修复轮次</span>
           <strong>{snapshot?.attempt ?? 0}</strong>
           <small>最多 {snapshot?.max_attempts ?? 2} 次修复</small>
         </article>
         <article className="panel">
-          <span>LIVE EVENTS</span>
+          <span>实时事件</span>
           <strong>{codexEventCount}</strong>
-          <small>{graphEventCount} LangGraph nodes</small>
+          <small>{graphEventCount} 个 LangGraph 节点</small>
         </article>
         <article className="panel">
-          <span>TOTAL TOKENS</span>
+          <span>Token 总量</span>
           <strong>{totalTokens.toLocaleString("zh-CN")}</strong>
           <small>按执行节点累计</small>
         </article>
         <article className="panel">
-          <span>PASS RATE Δ</span>
+          <span>通过率变化</span>
           <strong>{percent(snapshot?.verification?.pass_rate_delta)}</strong>
           <small>
-            regression {percent(snapshot?.verification?.regression_rate)}
+            回归率 {percent(snapshot?.verification?.regression_rate)}
           </small>
         </article>
       </div>
@@ -245,8 +274,8 @@ export default function LangGraphDashboard() {
 
       <article className="graph-timeline panel">
         <div className="panel-heading">
-          <span>LANGGRAPH EVENT TIMELINE</span>
-          <strong>{snapshot?.status ?? "NOT STARTED"}</strong>
+          <span>LangGraph 事件时间线</span>
+          <strong>{snapshot?.status ? (statusCopy[snapshot.status] ?? snapshot.status) : "待启动"}</strong>
         </div>
         {snapshot?.events.length ? (
           <div className="graph-event-list">
@@ -263,24 +292,24 @@ export default function LangGraphDashboard() {
                 <i />
                 <div>
                   <small>
-                    ATTEMPT {event.attempt} / {event.status}
+                    第 {event.attempt} 轮 / {statusCopy[event.status] ?? event.status}
                   </small>
                   <strong>{stageCopy[event.stage] ?? event.stage}</strong>
                   <p>{event.message}</p>
                 </div>
                 <dl>
                   <div>
-                    <dt>stage</dt>
+                    <dt>阶段</dt>
                     <dd>{event.stage}</dd>
                   </div>
                   <div>
-                    <dt>source</dt>
+                    <dt>来源</dt>
                     <dd>
-                      {event.stage.startsWith("codex.") ? "SDK" : "GRAPH"}
+                      {event.stage.startsWith("codex.") ? sourceCopy.sdk : sourceCopy.graph}
                     </dd>
                   </div>
                   <div>
-                    <dt>tokens</dt>
+                    <dt>Tokens</dt>
                     <dd>
                       {event.usage
                         ? (
@@ -305,57 +334,30 @@ export default function LangGraphDashboard() {
       <div className="graph-detail-grid">
         <article className="panel">
           <div className="panel-heading">
-            <span>ATTRIBUTION</span>
-            <strong>{snapshot?.attribution?.cause ?? "PENDING"}</strong>
+            <span>故障归因</span>
+            <strong>{snapshot?.attribution?.cause ?? "等待中"}</strong>
           </div>
           <h3>{snapshot?.attribution?.taxonomy ?? "等待失败证据"}</h3>
           {snapshot?.attribution?.agent_source === "llm" &&
           snapshot.attribution.agent_conclusion ? (
-            <div
-              style={{
-                border: "1px solid rgba(80, 220, 140, 0.35)",
-                background: "rgba(80, 220, 140, 0.08)",
-                borderRadius: 8,
-                padding: "10px 12px",
-                margin: "8px 0 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  letterSpacing: 0.6,
-                  color: "rgba(120, 220, 160, 0.95)",
-                  marginBottom: 4,
-                }}
-              >
+            <div className="agent-conclusion-card">
+              <div>
                 🤖 AI 归因结论 · DeepSeek
               </div>
-              <p style={{ margin: 0, lineHeight: 1.55 }}>
+              <p>
                 {snapshot.attribution.agent_conclusion}
               </p>
               {snapshot.attribution.agent_reason ? (
-                <p
-                  style={{
-                    margin: "6px 0 0",
-                    fontSize: 12,
-                    opacity: 0.75,
-                    lineHeight: 1.5,
-                  }}
-                >
+                <p className="agent-reason">
                   归因理由：{snapshot.attribution.agent_reason}
                 </p>
               ) : null}
               {snapshot.attribution.fault_type &&
               snapshot.attribution.fault_type !== "unknown" ? (
-                <p
-                  style={{
-                    margin: "6px 0 0",
-                    fontSize: 11,
-                    opacity: 0.6,
-                    letterSpacing: 0.4,
-                  }}
-                >
-                  fault_type = {snapshot.attribution.fault_type}
+                <p className="agent-fault-meta">
+                  故障类型：
+                  {faultTypeCopy[snapshot.attribution.fault_type] ??
+                    snapshot.attribution.fault_type}
                   {typeof snapshot.attribution.t_star === "number"
                     ? ` · t* = ${snapshot.attribution.t_star}`
                     : ""}
@@ -369,17 +371,17 @@ export default function LangGraphDashboard() {
             </p>
           )}
           <footer>
-            confidence {percent(snapshot?.attribution?.confidence)}
+            置信度 {percent(snapshot?.attribution?.confidence)}
             {snapshot?.attribution?.agent_source
-              ? ` · source=${snapshot.attribution.agent_source}`
+              ? ` · 来源=${snapshot.attribution.agent_source === "llm" ? "LLM" : "规则"}`
               : ""}
           </footer>
         </article>
 
         <article className="panel graph-patch-card">
           <div className="panel-heading">
-            <span>REPAIR PATCH</span>
-            <strong>{snapshot?.repair_patch?.kind ?? "PENDING"}</strong>
+            <span>修复补丁</span>
+            <strong>{snapshot?.repair_patch?.kind ?? "等待中"}</strong>
           </div>
           {snapshot?.repair_patch ? (
             <>
@@ -390,7 +392,7 @@ export default function LangGraphDashboard() {
                 + {snapshot.repair_patch.after}
               </p>
               <footer>
-                rollback {snapshot.repair_patch.rollback_ref}
+                回滚引用 {snapshot.repair_patch.rollback_ref}
               </footer>
             </>
           ) : (
@@ -400,19 +402,19 @@ export default function LangGraphDashboard() {
 
         <article className="panel graph-gate-card">
           <div className="panel-heading">
-            <span>VERIFICATION GATE</span>
-            <strong>{snapshot?.verification?.decision ?? "PENDING"}</strong>
+            <span>验证门禁</span>
+            <strong>{snapshot?.verification?.decision ?? "等待中"}</strong>
           </div>
           <div className="graph-pass-pair">
             <div>
-              <span>BEFORE</span>
+              <span>修复前</span>
               <strong>
                 {percent(snapshot?.verification?.baseline_pass_rate)}
               </strong>
             </div>
             <b>→</b>
             <div>
-              <span>AFTER</span>
+              <span>修复后</span>
               <strong>
                 {percent(snapshot?.verification?.candidate_pass_rate)}
               </strong>

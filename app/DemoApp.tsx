@@ -45,7 +45,7 @@ const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "diagnosis", label: "故障归因", eyebrow: "03" },
   { id: "patch", label: "修复验证", eyebrow: "04" },
   { id: "benchmark", label: "配对评测", eyebrow: "05" },
-  { id: "orchestrator", label: "LangGraph Loop", eyebrow: "06" },
+  { id: "orchestrator", label: "自愈链路", eyebrow: "06" },
 ];
 
 const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
@@ -148,8 +148,8 @@ function TraceProcessMap({ trace }: { trace: TraceStep[] }) {
   return (
     <article className="process-map panel">
       <div className="panel-heading">
-        <span>EXECUTION FLOW</span>
-        <strong>{trace.length} OBSERVED STEPS</strong>
+        <span>执行流程</span>
+        <strong>{trace.length} 个观测步骤</strong>
       </div>
       <div
         className="process-flow"
@@ -273,37 +273,37 @@ function TokenDashboard({ trace }: { trace: TraceStep[] }) {
         </div>
         <div className="usage-total">
           <strong>{formatTokens(summary.totalTokens)}</strong>
-          <span>total tokens</span>
+          <span>总 Tokens</span>
         </div>
       </div>
 
       <div className="usage-kpis">
         <article className="panel">
-          <span>INPUT</span>
+          <span>输入</span>
           <strong>{formatTokens(summary.inputTokens)}</strong>
-          <small>{formatTokens(summary.freshInputTokens)} fresh</small>
+          <small>{formatTokens(summary.freshInputTokens)} 新输入</small>
         </article>
         <article className="panel">
-          <span>OUTPUT</span>
+          <span>输出</span>
           <strong>{formatTokens(summary.outputTokens)}</strong>
-          <small>{formatTokens(summary.reasoningTokens)} reasoning</small>
+          <small>{formatTokens(summary.reasoningTokens)} 推理</small>
         </article>
         <article className="panel">
-          <span>CACHE HIT</span>
+          <span>缓存命中</span>
           <strong>{Math.round(summary.cacheHitRate * 100)}%</strong>
-          <small>{formatTokens(summary.cachedInputTokens)} cached</small>
+          <small>{formatTokens(summary.cachedInputTokens)} 缓存输入</small>
         </article>
         <article className="panel">
-          <span>HOT STEP</span>
+          <span>最高消耗步骤</span>
           <strong>{summary.hottestStepId}</strong>
-          <small>{formatTokens(summary.hottestStepTokens)} tokens</small>
+          <small>{formatTokens(summary.hottestStepTokens)} Tokens</small>
         </article>
       </div>
 
       <div className="usage-grid">
         <article className="token-breakdown panel">
           <div className="panel-heading">
-            <span>STEP BREAKDOWN</span>
+            <span>步骤消耗拆分</span>
             <div className="token-legend" aria-label="Token 类型图例">
               <span className="legend-fresh">新输入</span>
               <span className="legend-cached">缓存输入</span>
@@ -327,7 +327,7 @@ function TokenDashboard({ trace }: { trace: TraceStep[] }) {
 
         <article className="burn-panel panel">
           <div className="panel-heading">
-            <span>CUMULATIVE BURN</span>
+            <span>累计消耗曲线</span>
             <strong>{summary.durationMs} MS</strong>
           </div>
           <CumulativeTokenChart trace={trace} summary={summary} />
@@ -429,14 +429,14 @@ function BenchmarkDashboard({
     <section className="benchmark-view">
       <div className="section-intro benchmark-intro">
         <div>
-          <span className="kicker">DYNAMIC PAIRED SKILL EVALUATION</span>
+          <span className="kicker">动态配对 Skill 评测</span>
           <h2>
             同一任务跑两次，量化 Skill 的
             <em>真实收益与成本。</em>
           </h2>
         </div>
         <div className="benchmark-run-meta">
-          <span>RUN ID</span>
+          <span>运行 ID</span>
           <code>{activeBenchmark?.run_id ?? report.runId}</code>
           <small>{new Date(report.generatedAt).toLocaleString("zh-CN")}</small>
         </div>
@@ -444,11 +444,11 @@ function BenchmarkDashboard({
 
       <article className="benchmark-launcher panel">
         <div>
-          <span>DYNAMIC PAIRED RUN</span>
+          <span>动态配对运行</span>
           <strong>从同一基线启动 Control / Treatment</strong>
         </div>
         <label>
-          <span>EXECUTOR</span>
+          <span>执行器</span>
           <select
             value={executor}
             onChange={(event) =>
@@ -464,7 +464,7 @@ function BenchmarkDashboard({
           </select>
         </label>
         <label>
-          <span>SKILL</span>
+          <span>Skill</span>
           <select
             value={skillId}
             onChange={(event) => setSkillId(event.target.value)}
@@ -483,7 +483,7 @@ function BenchmarkDashboard({
           </select>
         </label>
         <label className="benchmark-task-input">
-          <span>TASK</span>
+          <span>任务</span>
           <input
             value={task}
             onChange={(event) => setTask(event.target.value)}
@@ -491,7 +491,7 @@ function BenchmarkDashboard({
           />
         </label>
         <label>
-          <span>TIMEOUT</span>
+          <span>超时</span>
           <input
             type="number"
             min={10}
@@ -521,7 +521,7 @@ function BenchmarkDashboard({
       {activeBenchmark && (
         <article className="benchmark-live-pair panel">
           <div className="panel-heading">
-            <span>LIVE BENCHMARK / {activeBenchmark.run_id}</span>
+            <span>实时评测 / {activeBenchmark.run_id}</span>
             <strong>{activeBenchmark.status.toUpperCase()}</strong>
           </div>
           <div className="benchmark-child-runs">
@@ -533,16 +533,16 @@ function BenchmarkDashboard({
                 onOpenChild(activeBenchmark.control_run_id)
               }
             >
-              <span>WITHOUT SKILL</span>
+              <span>未加载 Skill</span>
               <strong>
                 {activeBenchmark.control
                   ? plainPercent(
                       activeBenchmark.control.verifier.passRate,
                     )
-                  : "RUNNING"}
+                  : "运行中"}
               </strong>
               <small>
-                {activeBenchmark.control_run_id ?? "waiting for child Run"}
+                {activeBenchmark.control_run_id ?? "等待子 Run"}
               </small>
             </button>
             <i>VS</i>
@@ -554,22 +554,22 @@ function BenchmarkDashboard({
                 onOpenChild(activeBenchmark.treatment_run_id)
               }
             >
-              <span>WITH SKILL</span>
+              <span>加载 Skill</span>
               <strong>
                 {activeBenchmark.treatment
                   ? plainPercent(
                       activeBenchmark.treatment.verifier.passRate,
                     )
-                  : "WAITING"}
+                  : "等待中"}
               </strong>
               <small>
-                {activeBenchmark.treatment_run_id ?? "waiting for child Run"}
+                {activeBenchmark.treatment_run_id ?? "等待子 Run"}
               </small>
             </button>
           </div>
           <footer>
             {activeBenchmark.events.at(-1)?.message ??
-              "Benchmark state initialized."}
+              "评测状态已初始化。"}
           </footer>
         </article>
       )}
@@ -577,15 +577,15 @@ function BenchmarkDashboard({
       {activeRun && (
         <div className="benchmark-run-link panel">
           <div>
-            <span>CURRENT AGENT RUN</span>
+            <span>当前 Agent Run</span>
             <strong>{activeRun.run_id}</strong>
             <small>
               {activeRun.skill_id} · {activeRun.executor} ·{" "}
-              {linkedPair ? "paired benchmark matched" : "no historical pair"}
+              {linkedPair ? "已匹配配对评测" : "暂无历史配对"}
             </small>
           </div>
           <div>
-            <span>EVIDENCE SNAPSHOT</span>
+            <span>证据快照</span>
             <code>
               {runEvidenceId(activeRun)?.slice(0, 16) ?? "pending"}
             </code>
@@ -595,12 +595,12 @@ function BenchmarkDashboard({
                 target="_blank"
                 rel="noreferrer"
               >
-                OPEN IN LANGSMITH →
+                在 LangSmith 查看 →
               </a>
             )}
           </div>
           <div>
-            <span>CURRENT RUN EVALUATION</span>
+            <span>当前运行评估</span>
             <strong>
               {plainPercent(
                 activeRun.verification?.baseline_pass_rate ??
@@ -615,8 +615,7 @@ function BenchmarkDashboard({
               )}
             </strong>
             <small>
-              {activeRun.verification?.decision ?? activeRun.status} ·
-              regression{" "}
+              {activeRun.verification?.decision ?? activeRun.status} · 回归率{" "}
               {plainPercent(
                 activeRun.verification?.regression_rate ??
                   activeRun.execution?.regression_rate ??
@@ -640,49 +639,49 @@ function BenchmarkDashboard({
 
       <div className="benchmark-kpis">
         <article className="benchmark-kpi panel">
-          <span>AVG PASS-RATE DELTA</span>
+          <span>平均通过率提升</span>
           <strong>
             {signedPercent(report.summary.averagePassRateDelta)}
           </strong>
-          <small>{report.summary.improved}/3 skills improved</small>
+          <small>{report.summary.improved}/3 个 Skill 有提升</small>
         </article>
         <article className="benchmark-kpi panel">
-          <span>AVG TOKEN OVERHEAD</span>
+          <span>平均 Token 开销</span>
           <strong>
             {signedPercent(report.summary.averageTokenOverheadRate)}
           </strong>
-          <small>quality gain is not free</small>
+          <small>质量收益伴随额外成本</small>
         </article>
         <article className="benchmark-kpi panel">
-          <span>AVG LATENCY DELTA</span>
+          <span>平均耗时变化</span>
           <strong>
             {signedDuration(report.summary.averageDurationDeltaMs)}
           </strong>
-          <small>treatment minus control</small>
+          <small>Treatment 减去 Control</small>
         </article>
         <article className="benchmark-kpi panel">
-          <span>REGRESSION RATE</span>
+          <span>回归率</span>
           <strong>{signedPercent(report.summary.regressionRate)}</strong>
-          <small>control checks lost after Skill</small>
+          <small>加载 Skill 后丢失的检查项</small>
         </article>
       </div>
 
       <article className="benchmark-table-panel panel">
         <div className="panel-heading">
-          <span>WITH-SKILL / WITHOUT-SKILL</span>
-          <strong>{report.summary.completedPairs} COMPLETE PAIRS</strong>
+          <span>加载 Skill / 未加载 Skill</span>
+          <strong>{report.summary.completedPairs} 组完成</strong>
         </div>
         <div className="benchmark-table-wrap">
           <table className="benchmark-table">
             <thead>
               <tr>
                 <th>Skill</th>
-                <th>Control</th>
-                <th>With Skill</th>
-                <th>Δ Pass rate</th>
-                <th>Token overhead</th>
-                <th>Δ Duration</th>
-                <th>Outcome</th>
+                <th>对照组</th>
+                <th>加载 Skill</th>
+                <th>通过率变化</th>
+                <th>Token 开销</th>
+                <th>耗时变化</th>
+                <th>结果</th>
               </tr>
             </thead>
             <tbody>
@@ -751,7 +750,7 @@ function BenchmarkDashboard({
               <h3>{pair.name}</h3>
               <div className="paired-bars">
                 <div>
-                  <span>WITHOUT</span>
+                  <span>未加载</span>
                   <p>
                     <i
                       style={{
@@ -764,7 +763,7 @@ function BenchmarkDashboard({
                   </b>
                 </div>
                 <div className="with-skill">
-                  <span>WITH SKILL</span>
+                  <span>加载 Skill</span>
                   <p>
                     <i
                       style={{
@@ -778,7 +777,7 @@ function BenchmarkDashboard({
                 </div>
               </div>
               <div className="gained-checks">
-                <span>GAINED CHECKS</span>
+                <span>新增通过项</span>
                 {gained.length === 0 ? (
                   <p>没有新增通过项；Skill 提供了更多上下文，但未提高通过率。</p>
                 ) : (
@@ -794,11 +793,11 @@ function BenchmarkDashboard({
               </div>
               <footer>
                 <span>
-                  Δ tokens{" "}
+                  Token 变化{" "}
                   {formatTokens(pair.comparison.tokenDelta ?? 0)}
                 </span>
                 <span>
-                  regression{" "}
+                  回归率{" "}
                   {signedPercent(pair.comparison.regressionRate, 0)}
                 </span>
               </footer>
@@ -953,7 +952,7 @@ export default function DemoApp() {
         <div>
           <div className="brand-mark">SD</div>
           <p className="brand-name">Skill Doctor</p>
-          <p className="brand-caption">Trace-driven skill evolution</p>
+          <p className="brand-caption">基于 Trace 的 Skill 自愈</p>
         </div>
 
         <nav aria-label="Demo sections">
@@ -973,7 +972,7 @@ export default function DemoApp() {
 
         <div className="sidebar-foot">
           <span className="live-dot" />
-          <span>{snapshot ? "LIVE AGENT RUN" : "SAMPLE DATA"}</span>
+          <span>{snapshot ? "实时 Agent Run" : "示例数据"}</span>
           <small>{activeCase.id}</small>
         </div>
       </aside>
@@ -981,7 +980,7 @@ export default function DemoApp() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="kicker">SKILL EVOLUTION LAB / LOCAL RUN</span>
+            <span className="kicker">Skill 自愈实验台 / 本地运行</span>
             <h1>
               让每一次失败
               <br />
@@ -1008,7 +1007,7 @@ export default function DemoApp() {
         <section className="run-registry panel" aria-label="Agent runs">
           <div className="run-registry-heading">
             <div>
-              <span>RUN REGISTRY / SSE</span>
+              <span>Run 注册中心 / SSE</span>
               <strong>后端运行中心</strong>
             </div>
             <small className={registryStatus}>
@@ -1036,7 +1035,7 @@ export default function DemoApp() {
                   <strong>{run.skill_id}</strong>
                   <code>{run.run_id}</code>
                   <small>
-                    {run.executor} · {run.event_count} events
+                    {run.executor} · {run.event_count} 个事件
                   </small>
                 </button>
               ))
@@ -1061,15 +1060,15 @@ export default function DemoApp() {
         {view !== "orchestrator" && (
           <div className={`run-provenance ${snapshot ? "live" : "sample"}`}>
             <div>
-              <span>{snapshot ? "LIVE RUN SOURCE" : "PRE-RUN SAMPLE"}</span>
+              <span>{snapshot ? "实时运行来源" : "预运行示例"}</span>
               <strong>{activeCase.id}</strong>
             </div>
             <div>
-              <span>EXECUTOR</span>
+              <span>执行器</span>
               <code>{snapshot?.executor ?? "deterministic-demo-engine"}</code>
             </div>
             <div>
-              <span>EVIDENCE</span>
+              <span>证据</span>
               <code>
                 {runEvidenceId(snapshot)?.slice(0, 16) ??
                   (snapshot ? "pending" : "sample-fixture")}
@@ -1083,7 +1082,7 @@ export default function DemoApp() {
                     void openParentBenchmark(snapshot.parent_run_id!)
                   }
                 >
-                  BACK TO BENCHMARK →
+                  返回评测 →
                 </button>
               ) : null}
               {snapshot?.observability?.trace_url ? (
@@ -1092,11 +1091,11 @@ export default function DemoApp() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  OPEN IN LANGSMITH →
+                  在 LangSmith 查看 →
                 </a>
               ) : (
                 <button type="button" onClick={() => setView("orchestrator")}>
-                  {snapshot ? "VIEW LIVE LOOP →" : "START AGENT RUN →"}
+                  {snapshot ? "查看实时链路 →" : "启动 Agent Run →"}
                 </button>
               )}
             </div>
@@ -1149,17 +1148,17 @@ export default function DemoApp() {
           <section className="view-grid">
             <article className="case-panel panel">
               <div className="panel-heading">
-                <span>FAILED SESSION / {activeCase.name}</span>
+                <span>失败会话 / {activeCase.name}</span>
                 <strong>可复现</strong>
               </div>
               <h2>{activeCase.task}</h2>
               <div className="outcome-grid">
                 <div>
-                  <span>EXPECTED</span>
+                  <span>预期结果</span>
                   <strong>{activeCase.expected}</strong>
                 </div>
                 <div className="bad-value">
-                  <span>ACTUAL</span>
+                  <span>实际结果</span>
                   <strong>{activeCase.actual}</strong>
                 </div>
               </div>
@@ -1167,8 +1166,8 @@ export default function DemoApp() {
                 <div>
                   <dt>Trace</dt>
                   <dd>
-                    {activeCase.trace.length} steps /{" "}
-                    {formatTokens(result.usage.totalTokens)} tok
+                    {activeCase.trace.length} 步 /{" "}
+                    {formatTokens(result.usage.totalTokens)} Tokens
                   </dd>
                 </div>
                 <div>
@@ -1178,11 +1177,11 @@ export default function DemoApp() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Runtime</dt>
+                  <dt>运行时</dt>
                   <dd>
                     {snapshot
                       ? `${snapshot.executor} / LangGraph`
-                      : "local deterministic harness"}
+                      : "本地确定性 Harness"}
                   </dd>
                 </div>
               </dl>
@@ -1190,7 +1189,7 @@ export default function DemoApp() {
 
             <article className="decision-panel panel">
               <div className="panel-heading">
-                <span>REPAIR DECISION</span>
+                <span>修复决策</span>
                 <strong className="adopt-chip">
                   {result.validation.decision}
                 </strong>
@@ -1211,7 +1210,7 @@ export default function DemoApp() {
                     </>
                   )}
                 </div>
-                <p>{isSkillPatch ? "original replay" : "safe mutation policy"}</p>
+                <p>{isSkillPatch ? "原始用例回放" : "安全变更策略"}</p>
               </div>
               <ul className="reason-list">
                 {result.validation.reasons.map((reason) => (
@@ -1224,7 +1223,7 @@ export default function DemoApp() {
             </article>
 
             <article className="metric-card panel">
-              <span>ATTRIBUTION</span>
+              <span>归因</span>
               <strong>
                 <Percent value={result.diagnosis.confidence} />
               </strong>
@@ -1240,7 +1239,7 @@ export default function DemoApp() {
               </div>
             </article>
             <article className="metric-card panel">
-              <span>SKILL RESPONSIBILITY</span>
+              <span>Skill 责任</span>
               <strong>
                 <Percent value={result.diagnosis.responsibility} />
               </strong>
@@ -1256,7 +1255,7 @@ export default function DemoApp() {
               </div>
             </article>
             <article className="metric-card panel">
-              <span>MUTATION SAFETY</span>
+              <span>变更安全性</span>
               <strong>{isSkillPatch ? "1" : "0"}</strong>
               <p>{isSkillPatch ? "条最小化指令变更" : "条 Skill 内容变更"}</p>
               <div style={{ "--meter": "100%" } as React.CSSProperties}>
@@ -1270,7 +1269,7 @@ export default function DemoApp() {
           <section className="trace-view">
             <div className="section-intro">
               <div>
-                <span className="kicker">EVIDENCE SNAPSHOT</span>
+                <span className="kicker">证据快照</span>
                 <h2>从 Skill 路由到结果失败，证据链保持完整。</h2>
               </div>
               <dl>
@@ -1285,7 +1284,7 @@ export default function DemoApp() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Load state</dt>
+                  <dt>加载状态</dt>
                   <dd>
                     {activeCase.skill.loaded
                       ? `${activeCase.skill.id}@${activeCase.skill.version}`
@@ -1293,8 +1292,8 @@ export default function DemoApp() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Token usage</dt>
-                  <dd>{formatTokens(result.usage.totalTokens)} total</dd>
+                  <dt>Token 用量</dt>
+                  <dd>{formatTokens(result.usage.totalTokens)} 总量</dd>
                 </div>
               </dl>
             </div>
@@ -1330,7 +1329,7 @@ export default function DemoApp() {
           <section className="diagnosis-view">
             <div className="section-intro">
               <div>
-                <span className="kicker">STEP-LEVEL ATTRIBUTION</span>
+                <span className="kicker">步骤级归因</span>
                 <h2>
                   最早可行动故障发生在{" "}
                   <em>{result.diagnosis.primaryFaultStep}</em>。
@@ -1340,13 +1339,13 @@ export default function DemoApp() {
                 <strong>
                   <Percent value={result.diagnosis.confidence} />
                 </strong>
-                <span>confidence</span>
+                <span>置信度</span>
               </div>
             </div>
 
             <div className="diagnosis-grid">
               <article className="taxonomy-card panel">
-                <span>7-CLASS TAXONOMY</span>
+                <span>七类故障分类</span>
                 <div className="taxonomy-list">
                   {[
                     "Skill Recall Failure",
@@ -1375,7 +1374,7 @@ export default function DemoApp() {
 
               <article className="mechanism-card panel">
                 <div className="panel-heading">
-                  <span>CAUSAL MECHANISM</span>
+                  <span>因果机制</span>
                   <strong>
                     {result.diagnosis.ruleId} / {result.diagnosis.action}
                   </strong>
@@ -1391,14 +1390,14 @@ export default function DemoApp() {
                     </span>
                   ))}
                 </div>
-                <h3>Evidence refs</h3>
+                <h3>证据引用</h3>
                 <div className="evidence-list">
                   {result.diagnosis.evidenceRefs.map((ref) => (
                     <code key={ref}>{ref}</code>
                   ))}
                 </div>
                 <h3 className="rule-heading">
-                  Rule proof / {result.diagnosis.ruleVersion}
+                  规则证明 / {result.diagnosis.ruleVersion}
                 </h3>
                 <div className="rule-proof">
                   {result.diagnosis.ruleEvaluations.map((rule) => (
@@ -1408,7 +1407,7 @@ export default function DemoApp() {
                     >
                       <code>{rule.ruleId}</code>
                       <span>{rule.taxonomy}</span>
-                      <b>{rule.selected ? "SELECTED" : "EXCLUDED"}</b>
+                      <b>{rule.selected ? "命中" : "排除"}</b>
                       <small>{rule.reason}</small>
                     </div>
                   ))}
@@ -1425,7 +1424,7 @@ export default function DemoApp() {
                 <div className="section-intro">
                   <div>
                     <span className="kicker">
-                      SCOPED REPAIR + QUALIFICATION
+                      最小范围修复 + 验证
                     </span>
                     <h2>
                       只改动一条指令，然后用失败案例和回归集证明它。
@@ -1441,8 +1440,8 @@ export default function DemoApp() {
                 <div className="patch-grid">
                   <article className="diff-panel panel">
                     <div className="panel-heading">
-                      <span>SKILL.MD / PROCEDURE</span>
-                      <strong>{changedLineCount} LINES CHANGED</strong>
+                      <span>SKILL.MD / 执行流程</span>
+                      <strong>{changedLineCount} 行变更</strong>
                     </div>
                     <div className="diff-lines">
                       {Array.from({ length: repairLineCount }).map(
@@ -1485,14 +1484,14 @@ export default function DemoApp() {
 
                   <article className="validation-panel panel">
                     <div className="panel-heading">
-                      <span>VALIDATION GATE</span>
+                      <span>验证门禁</span>
                       <strong className="adopt-chip">
                         {result.validation.decision}
                       </strong>
                     </div>
                     <div className="validation-bars">
                       <div>
-                        <span>Current Run pass rate</span>
+                        <span>当前运行通过率</span>
                         <p>
                           <i
                             style={{
@@ -1511,7 +1510,7 @@ export default function DemoApp() {
                         </strong>
                       </div>
                       <div>
-                        <span>Verification sample</span>
+                        <span>验证样本</span>
                         <p>
                           <i
                             style={{
@@ -1530,7 +1529,7 @@ export default function DemoApp() {
                         </strong>
                       </div>
                       <div>
-                        <span>Regression retention</span>
+                        <span>回归保持率</span>
                         <p>
                           <i
                             style={{
@@ -1545,7 +1544,7 @@ export default function DemoApp() {
                         </strong>
                       </div>
                       <div>
-                        <span>Tool errors</span>
+                        <span>工具错误</span>
                         <p>
                           <i style={{ width: "0%" }} />
                         </p>
@@ -1567,7 +1566,7 @@ export default function DemoApp() {
                 <div className="section-intro">
                   <div>
                     <span className="kicker">
-                      SAFE REFUSAL + FAULT ROUTING
+                      安全拒绝 + 故障路由
                     </span>
                     <h2>
                       根因不在 Skill 内容，系统明确拒绝生成错误补丁。
@@ -1586,7 +1585,7 @@ export default function DemoApp() {
                       <span>{result.repair.actionId}</span>
                       <strong>{result.repair.mutationPolicy}</strong>
                     </div>
-                    <p className="safe-refusal">NO SKILL PATCH</p>
+                    <p className="safe-refusal">不修改 Skill</p>
                     <h3>{result.repair.title}</h3>
                     <p className="route-detail">{result.repair.detail}</p>
                     <ol className="route-operations">
@@ -1598,13 +1597,13 @@ export default function DemoApp() {
 
                   <article className="validation-panel panel">
                     <div className="panel-heading">
-                      <span>ISOLATION GATE</span>
+                      <span>隔离门禁</span>
                       <strong className="adopt-chip">
                         {result.validation.decision}
                       </strong>
                     </div>
                     <div className="isolation-score">
-                      <span>SKILL MUTATIONS</span>
+                      <span>Skill 变更数</span>
                       <strong>0</strong>
                       <p>
                         归因证据不足以支持内容修改时，写回通道保持关闭。
