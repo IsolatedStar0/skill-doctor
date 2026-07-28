@@ -117,6 +117,8 @@ export default function LangGraphDashboard() {
   const progress = terminal
     ? 100
     : Math.min(96, Math.round((graphEventCount / 9) * 100));
+  const skillContentLength = snapshot?.skill_content?.trim().length ?? 0;
+  const hasSkillContent = skillContentLength > 0;
 
   const run = async () => {
     abortRef.current?.abort();
@@ -315,6 +317,14 @@ export default function LangGraphDashboard() {
           <p>
             当前 run 来自真实 Aime Trace，可沉淀为回归用例，并基于归因结果生成只读修复预览。
           </p>
+          <div className={`skill-content-status ${hasSkillContent ? "available" : "missing"}`}>
+            <span>Skill 原文</span>
+            <strong>
+              {hasSkillContent
+                ? `已注入，${skillContentLength.toLocaleString("zh-CN")} 字符`
+                : "未注入，仅基于 Trace 证据判断"}
+            </strong>
+          </div>
           <div className="graph-action-row">
             <button type="button" onClick={() => void saveCase()}>
               保存为回归用例

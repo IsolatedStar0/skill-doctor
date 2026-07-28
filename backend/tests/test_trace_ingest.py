@@ -160,6 +160,170 @@ def test_trace_ingest_passed_aime_trace_keeps_fast_path(tmp_path: Path) -> None:
     assert calls == []
 
 
+def test_trace_ingest_passed_aime_trace_with_prior_execution_skips_llm(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    service.adaptor_llm_client = lambda prompt: calls.append(prompt) or json.dumps(
+        {
+            "fault_type": "skill_wrong",
+            "t_star": 0,
+            "fault_chain": [0],
+            "improvement_principle": "Should not be used for a passed trace.",
+            "reason": "Healthy trace should not be attributed.",
+        }
+    )
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(
+            {
+                "task": "Summarize healthy Aime trace.",
+                "skill_id": "healthy-skill",
+                "skill_version": "1.0.0",
+                "skill_content": "# healthy-skill\nFollow the safe path.",
+                "repair_enabled": False,
+                "execution": {
+                    "executor": "aime-skill-trace",
+                    "condition": "with_skill",
+                    "passed": True,
+                    "pass_rate": 1.0,
+                    "duration_ms": 100,
+                    "summary": "Aime skill completed successfully.",
+                    "assertions": [
+                        {
+                            "id": "skill-result-valid",
+                            "source": "skill",
+                            "passed": True,
+                            "detail": "The skill result matches the contract.",
+                        }
+                    ],
+                    "runtime_events": [
+                        {
+                            "stage": "aime.done",
+                            "status": "completed",
+                            "message": "Aime skill finished successfully.",
+                        }
+                    ],
+                },
+            }
+        )
+    )
+
+    assert state["status"] == "passed"
+    assert state["stop_reason"] == "initial_execution_passed"
+    assert "attribution" not in state
+    assert calls == []
+
+
+def test_trace_ingest_failed_aime_trace_prompt_includes_skill_content(
+    tmp_path: Path,
+) -> None:
+    prompts: list[str] = []
+
+    def fake_llm(prompt: str) -> str:
+        prompts.append(prompt)
+        return json.dumps(
+            {
+                "fault_type": "skill_wrong",
+                "t_star": 0,
+                "fault_chain": [0],
+                "improvement_principle": "Use the injected skill rule to fix the failed branch.",
+                "reason": "The supplied skill content contradicts the observed behavior.",
+            }
+        )
+
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    service.adaptor_llm_client = fake_llm
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(
+            {
+                "task": "Diagnose injected skill content.",
+                "skill_id": "trace-skill",
+                "skill_version": "1.0.0",
+                "skill_content": "# trace-skill\nMUST_USE_CANARY_RULE_FOR_DIAGNOSIS",
+                "repair_enabled": False,
+                "execution": {
+                    "executor": "aime-skill-trace",
+                    "condition": "with_skill",
+                    "passed": False,
+                    "pass_rate": 0.0,
+                    "duration_ms": 100,
+                    "summary": "Skill-owned rule failed.",
+                    "assertions": [
+                        {
+                            "id": "canary-rule",
+                            "source": "skill",
+                            "passed": False,
+                            "detail": "The canary skill rule was not followed.",
+                        }
+                    ],
+                },
+            }
+        )
+    )
+
+    assert state["status"] == "failed"
+    assert state["attribution"]["cause"] == "skill"
+    assert state["attribution"]["fault_type"] == "skill_wrong"
+    assert prompts
+    assert "MUST_USE_CANARY_RULE_FOR_DIAGNOSIS" in prompts[0]
+
+
+def test_trace_ingest_normalizes_skill_wrong_cause_from_llm(
+    tmp_path: Path,
+) -> None:
+    def fake_llm(_: str) -> str:
+        return json.dumps(
+            {
+                "fault_type": "skill_wrong",
+                "t_star": 0,
+                "fault_chain": [0],
+                "improvement_principle": "Revise the skill-owned failing check.",
+                "reason": "The failing evidence is skill-owned.",
+            }
+        )
+
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    service.adaptor_llm_client = fake_llm
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(
+            {
+                "task": "Diagnose skill-owned mismatch.",
+                "skill_id": "trace-skill",
+                "skill_version": "1.0.0",
+                "skill_content": "# trace-skill\nFollow all skill checks.",
+                "repair_enabled": False,
+                "execution": {
+                    "executor": "aime-skill-trace",
+                    "condition": "with_skill",
+                    "passed": False,
+                    "pass_rate": 0.0,
+                    "duration_ms": 100,
+                    "summary": "A system assertion failed but LLM maps it to skill logic.",
+                    "assertions": [
+                        {
+                            "id": "system-observed-mismatch",
+                            "source": "system",
+                            "passed": False,
+                            "detail": "Observed output violates the skill semantics.",
+                        }
+                    ],
+                },
+            }
+        )
+    )
+
+    assert state["attribution"]["fault_type"] == "skill_wrong"
+    assert state["attribution"]["cause"] == "skill"
+    assert state["attribution"]["action"] == "patch_skill"
+
+
 def test_default_diagnostic_suite_covers_core_trace_routes(tmp_path: Path) -> None:
     service = RunService(PROJECT_ROOT)
     service.report_directory = tmp_path

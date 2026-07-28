@@ -323,6 +323,9 @@ You are the Localizer stage of a Skill-Doctor style attribution pipeline.
 ## Task
 {task}
 
+## Current Skill Content
+{skill_content}
+
 ## Trajectory
 {trajectory}
 
@@ -357,6 +360,7 @@ class Localizer:
         *,
         task: str = "",
         current_skill_id: str = "",
+        current_skill_content: str = "",
         force_llm: bool = False,
     ) -> Optional[LocalizedFault]:
         if not force_llm:
@@ -370,7 +374,12 @@ class Localizer:
             return None
 
         if self.llm_client is not None:
-            fault = self._localize_with_llm(execution, steps, task)
+            fault = self._localize_with_llm(
+                execution,
+                steps,
+                task,
+                current_skill_content,
+            )
             if fault is not None:
                 LOGGER.info(
                     "Localizer: LLM invoked → fault_type=%s t*=%s conclusion=%r",
@@ -488,6 +497,7 @@ class Localizer:
         execution: ExecutionResult,
         steps: List[TrajectoryStep],
         task: str,
+        skill_content: str,
     ) -> Optional[LocalizedFault]:
         client = self.llm_client
         if client is None:
@@ -495,6 +505,7 @@ class Localizer:
         trajectory_str = _format_trajectory_for_prompt(steps)
         prompt = _LOCALIZER_PROMPT_TEMPLATE.format(
             task=task or "(no task description provided)",
+            skill_content=_trim_skill_body(skill_content) or "(no skill content provided)",
             trajectory=trajectory_str,
         )
         try:

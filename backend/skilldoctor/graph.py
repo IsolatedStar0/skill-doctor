@@ -60,6 +60,48 @@ def _next_patch_version(version: str) -> str:
     return f"{version}+repair.1"
 
 
+def _normalize_attribution_result(
+    result: AttributionResult,
+    execution: ExecutionResult,
+) -> AttributionResult:
+    """Keep fault attribution semantically consistent before routing/repair."""
+
+    updates: dict[str, Any] = {}
+    if execution.passed:
+        updates.update(
+            {
+                "taxonomy": "Healthy Trace",
+                "cause": "platform",
+                "confidence": 1.0,
+                "responsibility": 0.0,
+                "action": "split_non_skill",
+                "fault_type": "unknown",
+                "t_star": None,
+                "fault_chain": [],
+                "improvement_principle": "",
+                "skill_attributions": [],
+                "agent_conclusion": "",
+                "agent_reason": "",
+                "agent_source": "none",
+                "explanation": "Trace passed all checks; no fault attribution was produced.",
+            }
+        )
+    elif result.fault_type == FaultType.SKILL_WRONG.value and result.cause != "skill":
+        updates.update(
+            {
+                "taxonomy": "Content Gap",
+                "cause": "skill",
+                "action": "patch_skill",
+                "responsibility": max(result.responsibility, 0.85),
+                "confidence": max(result.confidence, 0.8),
+            }
+        )
+    elif result.cause in {"tool", "platform"} and result.action != "split_non_skill":
+        updates["action"] = "split_non_skill"
+
+    return result.model_copy(update=updates) if updates else result
+
+
 def build_agent_graph(
     worker: ExecutionWorker,
     runtime_event_observer: Callable[
@@ -212,6 +254,7 @@ def build_agent_graph(
             execution,
             task=state.get("task", ""),
             current_skill_id=state["skill_id"],
+            current_skill_content=state.get("skill_content", ""),
             force_llm=force_llm,
         )
         attributions = (
@@ -310,11 +353,13 @@ def build_agent_graph(
             localized is not None
             and getattr(localized, "source", "rule-based") == "llm"
             and localized.improvement_principle
+            and not execution.passed
         ):
             llm_text = localized.improvement_principle.strip()
             if localized.reason:
                 llm_text = f"{llm_text} — {localized.reason.strip()}"
             result = result.model_copy(update={"explanation": llm_text})
+        result = _normalize_attribution_result(result, execution)
         return {
             "attribution": result.model_dump(mode="json"),
             "events": [

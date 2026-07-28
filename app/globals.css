@@ -1431,6 +1431,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   color: #355d43;
   font: 11px/1.4 var(--mono);
 }
+.skill-content-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-2);
+  font: 11px/1.35 var(--mono);
+}
+.skill-content-status span { color: var(--muted); }
+.skill-content-status strong { color: var(--ink); }
+.skill-content-status.available {
+  border-color: rgba(82, 129, 98, .32);
+  background: rgba(82, 129, 98, .1);
+}
+.skill-content-status.available strong { color: #355d43; }
+.skill-content-status.missing {
+  border-color: rgba(233, 95, 69, .32);
+  background: rgba(233, 95, 69, .08);
+}
+.skill-content-status.missing strong { color: var(--danger); }
 .graph-action-row {
   display: flex;
   flex-wrap: wrap;
