@@ -32,7 +32,7 @@ from .observability import (
     create_observability_exporter,
 )
 from .registry import RunRegistry
-from .storage import FileStorageBackend, StorageBackend
+from .storage import StorageBackend, build_storage_backend
 from .workers import (
     BenchmarkReplayWorker,
     CodexExecutionWorker,
@@ -56,7 +56,7 @@ class RunService:
             project_root
             or Path(__file__).resolve().parents[2]
         ).resolve()
-        self.storage = storage or FileStorageBackend(self.project_root)
+        self.storage = storage or build_storage_backend(self.project_root)
         self.exporter_factory = exporter_factory
         # Build a shared DeepSeek LLM client once per service. Returns None
         # gracefully when DEEPSEEK_API_KEY / openai SDK is unavailable, in

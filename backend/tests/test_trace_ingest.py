@@ -11,7 +11,11 @@ from backend.skilldoctor.models import (
     TraceIngestRequest,
 )
 from backend.skilldoctor.service import RunService
-from backend.skilldoctor.storage import FileStorageBackend
+from backend.skilldoctor.storage import (
+    FileStorageBackend,
+    SQLiteStorageBackend,
+    build_storage_backend,
+)
 from http.server import ThreadingHTTPServer
 
 
@@ -480,6 +484,56 @@ def test_file_storage_backend_persists_runtime_assets(tmp_path: Path) -> None:
     assert storage.get_candidate_skill(
         created["candidate"]["candidate_id"]
     )["candidate_id"] == created["candidate"]["candidate_id"]
+
+
+def test_sqlite_storage_backend_persists_runtime_assets(tmp_path: Path) -> None:
+    storage = SQLiteStorageBackend(tmp_path)
+    service = RunService(PROJECT_ROOT, storage=storage)
+    service.adaptor_llm_client = None
+
+    state = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    saved = service.save_diagnostic_case_from_run(state["run_id"])
+    created = service.create_candidate_skill_from_run(state["run_id"])
+    candidate = created["candidate"]
+    record = {
+        "schema_version": "1.0",
+        "rejection_id": "rej-sqlite001",
+        "created_at": "2026-07-28T00:00:00Z",
+        "candidate_id": candidate["candidate_id"],
+        "skill_id": candidate["skill_id"],
+        "decision": "REJECT",
+        "fault_type": "skill_wrong",
+        "action": "patch_skill",
+        "patch_sha256": "sqlite-seed",
+    }
+    rejection_path = storage.save_rejection_memory(record["rejection_id"], record)
+
+    assert storage.database_path.is_file()
+    assert storage.get_run(state["run_id"])["run_id"] == state["run_id"]
+    assert saved["path"].startswith("sqlite://")
+    assert len(storage.list_diagnostic_cases()) == 1
+    assert storage.get_candidate_skill(
+        candidate["candidate_id"]
+    )["candidate_id"] == candidate["candidate_id"]
+    assert rejection_path.endswith("#rejection_memory/rej-sqlite001")
+    assert storage.list_rejection_memory(
+        candidate["skill_id"]
+    )[0]["rejection_id"] == "rej-sqlite001"
+
+
+def test_build_storage_backend_uses_sqlite_from_environment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SKILL_DOCTOR_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("SKILL_DOCTOR_SQLITE_PATH", "custom/storage.sqlite3")
+
+    storage = build_storage_backend(tmp_path)
+
+    assert isinstance(storage, SQLiteStorageBackend)
+    assert storage.database_path == tmp_path / "custom" / "storage.sqlite3"
 
 
 def test_repair_preview_from_attributed_trace_run(tmp_path: Path) -> None:
