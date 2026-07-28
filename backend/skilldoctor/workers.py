@@ -47,7 +47,7 @@ class FixtureWorker:
         condition: str = "standard",
     ) -> ExecutionResult:
         del run_id, task, skill_content
-        if self.scenario == "network-error":
+        if self.scenario in {"network-error", "platform-error"}:
             return ExecutionResult(
                 executor="fixture",
                 condition="with_skill",
@@ -65,6 +65,49 @@ class FixtureWorker:
                 ],
                 summary="Execution failed before the Skill procedure could run.",
                 error="network connection reset",
+            )
+
+        if self.scenario == "loading-miss":
+            repaired = attempt > 0
+            return ExecutionResult(
+                executor="fixture",
+                condition="with_skill" if repaired else "without_skill",
+                passed=repaired,
+                pass_rate=1.0 if repaired else 0.25,
+                duration_ms=1_020 if repaired else 860,
+                usage=TokenUsage(
+                    input_tokens=1_260 if repaired else 1_080,
+                    output_tokens=210 if repaired else 170,
+                    cached_input_tokens=520 if repaired else 420,
+                    reasoning_tokens=72 if repaired else 64,
+                ),
+                assertions=[
+                    AssertionResult(
+                        id="required-skill-loaded",
+                        source="skill",
+                        passed=repaired,
+                        detail=(
+                            "The target Skill and references were loaded into context."
+                            if repaired
+                            else "The target Skill was selected but its references were absent from context."
+                        ),
+                    ),
+                    AssertionResult(
+                        id="fallback-output-contract",
+                        source="task",
+                        passed=True,
+                        detail=(
+                            "The repository-specific checklist includes rollback and approval gates."
+                            if repaired
+                            else "A generic checklist was produced, but required repository gates were missing."
+                        ),
+                    ),
+                ],
+                summary=(
+                    "The selected Skill references were loaded after the loader patch."
+                    if repaired
+                    else "The selected Skill did not fully enter the execution context."
+                ),
             )
 
         paired = condition in {"without_skill", "with_skill"}

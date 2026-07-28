@@ -58,6 +58,25 @@ def test_platform_failure_never_mutates_skill(tmp_path: Path) -> None:
     assert result["skill_version"] == "1.0.0"
 
 
+def test_loading_miss_routes_to_loader_patch(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+
+    result = service.run(
+        RunRequest(
+            executor="fixture",
+            scenario="loading-miss",
+            skill_id="release-checklist",
+        )
+    )
+
+    assert result["status"] == "passed"
+    assert result["attribution"]["taxonomy"] == "Loading Miss"
+    assert result["attribution"]["cause"] == "loader"
+    assert result["attribution"]["action"] == "patch_loader"
+    assert result["repair_patch"]["kind"] == "loader_patch"
+
+
 def test_real_codex_report_can_be_replayed_through_graph(tmp_path: Path) -> None:
     service = RunService(PROJECT_ROOT)
     service.report_directory = tmp_path

@@ -371,6 +371,7 @@ function BenchmarkDashboard({
   onOpenChild: (runId: string) => void;
 }) {
   const report = activeBenchmark?.report ?? fallbackReport;
+  const activeBenchmarkScenario = activeRun?.scenario;
   const [executor, setExecutor] = useState<"fixture" | "replay" | "codex">(
     "fixture",
   );
@@ -405,7 +406,12 @@ function BenchmarkDashboard({
       await streamBenchmarkRun(
         {
           executor,
-          scenario: "content-gap",
+          scenario:
+            activeBenchmarkScenario === "loading-miss" ||
+            activeBenchmarkScenario === "platform-error" ||
+            activeBenchmarkScenario === "network-error"
+              ? activeBenchmarkScenario
+              : "content-gap",
           skill_id: skillId,
           task,
           codex_timeout_ms: timeoutSeconds * 1_000,

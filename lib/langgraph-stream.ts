@@ -132,7 +132,7 @@ export type LangGraphState = {
 
 export type LangGraphRunRequest = {
   executor: "fixture" | "replay" | "codex";
-  scenario: "content-gap" | "network-error";
+  scenario: "content-gap" | "loading-miss" | "platform-error" | "network-error";
   skill_id: string;
   stream_delay_ms?: number;
   codex_timeout_ms?: number;
@@ -162,7 +162,7 @@ export type BenchmarkState = {
   skill_id: string;
   skill_version: string;
   executor: "fixture" | "replay" | "codex";
-  scenario: "content-gap" | "network-error";
+  scenario: "content-gap" | "loading-miss" | "platform-error" | "network-error";
   condition: "paired";
   attempt: 0;
   max_attempts: 0;
@@ -419,7 +419,7 @@ export type RunRegistryEvent = {
 
 export type BenchmarkRunRequest = {
   executor: "fixture" | "replay" | "codex";
-  scenario: "content-gap" | "network-error";
+  scenario: "content-gap" | "loading-miss" | "platform-error" | "network-error";
   skill_id: string;
   task?: string;
   skill_content?: string;

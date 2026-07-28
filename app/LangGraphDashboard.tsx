@@ -21,6 +21,7 @@ import BusinessResultCard from "./BusinessResultCard";
 
 type RunMode = "fixture" | "replay" | "codex";
 type UiStatus = "idle" | "running" | "passed" | "failed" | "error";
+type RunScenario = "content-gap" | "loading-miss" | "platform-error";
 
 const stageCopy: Record<string, string> = {
   prepare: "准备状态",
@@ -73,6 +74,32 @@ const faultTypeCopy: Record<string, string> = {
   unknown: "未知类型",
 };
 
+const scenarioOptions: Array<{
+  id: RunScenario;
+  title: string;
+  summary: string;
+  skillId: string;
+}> = [
+  {
+    id: "content-gap",
+    title: "内容缺口",
+    summary: "Skill 已加载但遗漏关键约束，期望进入 Skill 修订链路。",
+    skillId: "spreadsheet-summary",
+  },
+  {
+    id: "loading-miss",
+    title: "加载遗漏",
+    summary: "Skill 被选中但引用资源缺失，期望归因为 loader 问题。",
+    skillId: "release-checklist",
+  },
+  {
+    id: "platform-error",
+    title: "平台异常",
+    summary: "执行失败来自外部服务边界，期望拒绝修改 Skill。",
+    skillId: "skill-release",
+  },
+];
+
 function percent(value: number | undefined) {
   return value === undefined ? "—" : `${Math.round(value * 100)}%`;
 }
@@ -105,6 +132,7 @@ function tokenBreakdown(usage: LangGraphState["events"][number]["usage"]) {
 
 export default function LangGraphDashboard() {
   const [mode, setMode] = useState<RunMode>("fixture");
+  const [scenario, setScenario] = useState<RunScenario>("content-gap");
   const [uiStatus, setUiStatus] = useState<UiStatus>("idle");
   const { snapshot, setSnapshot } = useRunStore();
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +151,8 @@ export default function LangGraphDashboard() {
   const apiUrl =
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
     "http://localhost:8010";
+  const selectedScenario =
+    scenarioOptions.find((item) => item.id === scenario) ?? scenarioOptions[0];
 
   useEffect(
     () => () => {
@@ -180,9 +210,8 @@ export default function LangGraphDashboard() {
       await streamLangGraphRun(
         {
           executor: mode,
-          scenario: "content-gap",
-          skill_id:
-            mode === "fixture" ? "spreadsheet-summary" : "tdd-workflow",
+          scenario,
+          skill_id: mode === "fixture" ? selectedScenario.skillId : "tdd-workflow",
           stream_delay_ms: mode === "codex" ? 0 : 220,
           codex_timeout_ms: 180_000,
         },
@@ -331,6 +360,22 @@ export default function LangGraphDashboard() {
             {modeCopy.codex.title}
           </button>
         </div>
+        {mode === "fixture" ? (
+          <div className="graph-mode" aria-label="Failure scenario">
+            {scenarioOptions.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={scenario === item.id ? "active" : ""}
+                onClick={() => setScenario(item.id)}
+                disabled={uiStatus === "running"}
+              >
+                <span>{item.summary}</span>
+                {item.title}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="graph-api">
           <span>流式接口</span>
           <code>{apiUrl}/runs/stream</code>

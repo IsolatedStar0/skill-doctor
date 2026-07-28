@@ -6,6 +6,14 @@ from typing import Annotated, Any, Literal, NotRequired, TypedDict
 from pydantic import BaseModel, Field, model_validator
 
 
+ScenarioName = Literal[
+    "content-gap",
+    "loading-miss",
+    "platform-error",
+    "network-error",
+]
+
+
 class TokenUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
@@ -145,7 +153,7 @@ class RunRequest(BaseModel):
         "Inspect the task, execute the required procedure, and verify the result."
     )
     executor: Literal["fixture", "replay", "codex", "trace-ingest"] = "fixture"
-    scenario: Literal["content-gap", "network-error"] = "content-gap"
+    scenario: ScenarioName = "content-gap"
     condition: Literal[
         "standard",
         "without_skill",
@@ -255,7 +263,7 @@ class BenchmarkRequest(BaseModel):
         "Inspect the task, execute the required procedure, and verify the result."
     )
     executor: Literal["fixture", "replay", "codex"] = "fixture"
-    scenario: Literal["content-gap", "network-error"] = "content-gap"
+    scenario: ScenarioName = "content-gap"
     codex_timeout_ms: int = Field(default=180_000, ge=10_000, le=600_000)
     codex_reasoning_effort: Literal[
         "minimal",

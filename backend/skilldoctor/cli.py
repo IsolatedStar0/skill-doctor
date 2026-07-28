@@ -19,7 +19,11 @@ def parser() -> argparse.ArgumentParser:
         choices=["fixture", "replay", "codex"],
         default="fixture",
     )
-    run.add_argument("--scenario", choices=["content-gap", "network-error"], default="content-gap")
+    run.add_argument(
+        "--scenario",
+        choices=["content-gap", "loading-miss", "platform-error", "network-error"],
+        default="content-gap",
+    )
     run.add_argument("--skill-id", default="tdd-workflow")
     run.add_argument("--max-attempts", type=int, default=2)
     run.add_argument("--codex-timeout-ms", type=int, default=180_000)
