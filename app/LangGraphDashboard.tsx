@@ -5,8 +5,10 @@ import {
   createRepairPreview,
   saveRunAsDiagnosticCase,
   streamLangGraphRun,
+  verifyRepair,
   type LangGraphState,
   type RepairPreview,
+  type RepairVerificationReport,
 } from "../lib/langgraph-stream";
 import { useRunStore } from "./RunStore";
 import BusinessResultCard from "./BusinessResultCard";
@@ -89,6 +91,10 @@ export default function LangGraphDashboard() {
   const [caseSaveStatus, setCaseSaveStatus] = useState<string | null>(null);
   const [repairPreview, setRepairPreview] = useState<RepairPreview | null>(null);
   const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [baselineRunId, setBaselineRunId] = useState("");
+  const [candidateRunId, setCandidateRunId] = useState("");
+  const [verificationReport, setVerificationReport] = useState<RepairVerificationReport | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const abortRef = useRef<AbortController | null>(null);
   const apiUrl =
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
@@ -119,6 +125,14 @@ export default function LangGraphDashboard() {
     : Math.min(96, Math.round((graphEventCount / 9) * 100));
   const skillContentLength = snapshot?.skill_content?.trim().length ?? 0;
   const hasSkillContent = skillContentLength > 0;
+  const defaultBaselineRunId =
+    snapshot?.executor === "trace-ingest"
+      ? (snapshot.parent_run_id ?? (snapshot.status === "failed" ? snapshot.run_id : ""))
+      : "";
+  const defaultCandidateRunId =
+    snapshot?.executor === "trace-ingest" ? snapshot.run_id : "";
+  const effectiveBaselineRunId = baselineRunId || defaultBaselineRunId;
+  const effectiveCandidateRunId = candidateRunId || defaultCandidateRunId;
 
   const run = async () => {
     abortRef.current?.abort();
@@ -129,6 +143,10 @@ export default function LangGraphDashboard() {
     setCaseSaveStatus(null);
     setRepairPreview(null);
     setPreviewStatus("idle");
+    setBaselineRunId("");
+    setCandidateRunId("");
+    setVerificationReport(null);
+    setVerificationStatus("idle");
     setUiStatus("running");
     try {
       await streamLangGraphRun(
@@ -189,6 +207,27 @@ export default function LangGraphDashboard() {
     } catch (caught) {
       setPreviewStatus("error");
       setCaseSaveStatus(caught instanceof Error ? caught.message : "生成修复预览失败。");
+    }
+  };
+
+  const runVerification = async () => {
+    if (!effectiveBaselineRunId.trim() || !effectiveCandidateRunId.trim()) {
+      setCaseSaveStatus("请填写 baseline run 与 candidate run。通常 candidate 为当前修复后 Trace，baseline 为原失败 Trace。");
+      return;
+    }
+    setVerificationStatus("loading");
+    setVerificationReport(null);
+    try {
+      const result = await verifyRepair(
+        effectiveBaselineRunId.trim(),
+        effectiveCandidateRunId.trim(),
+        apiUrl,
+      );
+      setVerificationReport(result);
+      setVerificationStatus("done");
+    } catch (caught) {
+      setVerificationStatus("error");
+      setCaseSaveStatus(caught instanceof Error ? caught.message : "修复验证失败。");
     }
   };
 
@@ -338,6 +377,31 @@ export default function LangGraphDashboard() {
               {previewStatus === "loading" ? "生成中" : "生成修复预览"}
             </button>
           </div>
+          <div className="repair-verification-form">
+            <label>
+              <span>Baseline Run</span>
+              <input
+                value={effectiveBaselineRunId}
+                placeholder="原失败 run_id"
+                onChange={(event) => setBaselineRunId(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Candidate Run</span>
+              <input
+                value={effectiveCandidateRunId}
+                placeholder="修复后 run_id"
+                onChange={(event) => setCandidateRunId(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={verificationStatus === "loading"}
+              onClick={() => void runVerification()}
+            >
+              {verificationStatus === "loading" ? "验证中" : "验证修复效果"}
+            </button>
+          </div>
           {caseSaveStatus ? <small>{caseSaveStatus}</small> : null}
           {repairPreview ? (
             <div className="repair-preview-card">
@@ -352,6 +416,34 @@ export default function LangGraphDashboard() {
                   <li key={step}>{step}</li>
                 ))}
               </ol>
+            </div>
+          ) : null}
+          {verificationReport ? (
+            <div className={`repair-verification-card ${verificationReport.decision.toLowerCase()}`}>
+              <div>
+                <span>修复验证报告</span>
+                <strong>{verificationReport.decision}</strong>
+              </div>
+              <div className="graph-pass-pair compact">
+                <div>
+                  <span>Baseline</span>
+                  <strong>{percent(verificationReport.baseline.pass_rate)}</strong>
+                </div>
+                <b>→</b>
+                <div>
+                  <span>Candidate</span>
+                  <strong>{percent(verificationReport.candidate.pass_rate)}</strong>
+                </div>
+              </div>
+              <ul>
+                {verificationReport.checks.map((check) => (
+                  <li key={check.name} className={check.passed ? "passed" : "failed"}>
+                    <span>{check.passed ? "✅" : "❌"}</span>
+                    {check.label}
+                  </li>
+                ))}
+              </ul>
+              <p>{verificationReport.reasons[0]}</p>
             </div>
           ) : null}
         </article>

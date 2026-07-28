@@ -317,3 +317,12 @@ class RepairPreviewRequest(BaseModel):
     """Options for generating an auditable repair preview from a run."""
 
     include_full_skill: bool = False
+
+
+class RepairVerificationRequest(BaseModel):
+    """Compare a baseline failure run with a candidate repair run."""
+
+    baseline_run_id: str
+    candidate_run_id: str
+    include_saved_cases: bool = True
+    decision_policy: Literal["strict", "balanced"] = "strict"

@@ -14,6 +14,7 @@ from .models import (
     BenchmarkRequest,
     DiagnosticSuiteRequest,
     RepairPreviewRequest,
+    RepairVerificationRequest,
     RunRequest,
     SaveDiagnosticCaseRequest,
     TraceIngestRequest,
@@ -188,6 +189,16 @@ def save_diagnostic_case_from_run(
 def create_repair_preview(run_id: str, request: RepairPreviewRequest) -> dict:
     try:
         return service.create_repair_preview(run_id, request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Run not found.") from error
+
+
+@app.post("/repairs/verify")
+def verify_repair(request: RepairVerificationRequest) -> dict:
+    try:
+        return service.verify_repair(request)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except FileNotFoundError as error:

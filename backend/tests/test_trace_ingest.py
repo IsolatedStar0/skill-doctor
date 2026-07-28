@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 
 from backend.skilldoctor.http_server import make_handler
-from backend.skilldoctor.models import TraceIngestRequest
+from backend.skilldoctor.models import RepairVerificationRequest, TraceIngestRequest
 from backend.skilldoctor.service import RunService
 from http.server import ThreadingHTTPServer
 
@@ -41,6 +41,42 @@ def _payload() -> str:
                         "status": "completed",
                         "message": "Trace imported from Aime.",
                         "metadata": {"source": "aime"},
+                    }
+                ],
+            },
+        }
+    )
+
+
+def _candidate_payload(passed: bool = True) -> str:
+    pass_rate = 1.0 if passed else 0.5
+    return json.dumps(
+        {
+            "task": "Diagnose uploaded trace after repair.",
+            "skill_id": "trace-skill",
+            "skill_version": "1.0.1",
+            "skill_content": "Follow the full procedure and validate the required step.",
+            "repair_enabled": False,
+            "execution": {
+                "executor": "aime-skill-trace",
+                "condition": "with_skill",
+                "passed": passed,
+                "pass_rate": pass_rate,
+                "duration_ms": 1000,
+                "summary": "Candidate execution completed after the proposed repair.",
+                "assertions": [
+                    {
+                        "id": "complete-procedure",
+                        "source": "skill",
+                        "passed": passed,
+                        "detail": "The skill completed the required step." if passed else "The skill still skipped a required step.",
+                    }
+                ],
+                "runtime_events": [
+                    {
+                        "stage": "aime.trace",
+                        "status": "completed",
+                        "message": "Candidate trace imported from Aime.",
                     }
                 ],
             },
@@ -425,6 +461,105 @@ def test_repair_preview_from_attributed_trace_run(tmp_path: Path) -> None:
     assert preview["can_apply"] is False
     assert "Skill Doctor 修复建议" in preview["suggested_patch"]["after"]
     assert preview["verification_plan"]
+
+
+def test_verify_repair_adopts_improved_candidate(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.adaptor_llm_client = None
+
+    baseline = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    candidate = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_candidate_payload(passed=True)))
+    )
+    report = service.verify_repair(
+        RepairVerificationRequest(
+            baseline_run_id=baseline["run_id"],
+            candidate_run_id=candidate["run_id"],
+        )
+    )
+
+    assert report["schema_version"] == "1.0"
+    assert report["decision"] == "ADOPT"
+    assert report["baseline"]["run_id"] == baseline["run_id"]
+    assert report["candidate"]["run_id"] == candidate["run_id"]
+    assert report["delta"]["pass_rate_delta"] == 0.5
+    assert all(item["passed"] for item in report["checks"])
+    assert "Skill Doctor Repair Verification" in report["markdown"]
+    updated = service.get(candidate["run_id"])
+    assert updated["verification"]["decision"] == "ADOPT"
+    assert updated["repair_verification"]["decision"] == "ADOPT"
+
+
+def test_verify_repair_rejects_unfixed_candidate(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.adaptor_llm_client = None
+
+    baseline = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    candidate = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_candidate_payload(passed=False)))
+    )
+    report = service.verify_repair(
+        RepairVerificationRequest(
+            baseline_run_id=baseline["run_id"],
+            candidate_run_id=candidate["run_id"],
+        )
+    )
+
+    assert report["decision"] == "REJECT"
+    assert any(not item["passed"] for item in report["checks"])
+    assert any("未满足" in reason for reason in report["reasons"])
+
+
+def test_verify_repair_http_endpoint(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path / "reports"
+    service.diagnostic_case_directory = tmp_path / "diagnostic_cases"
+    service.adaptor_llm_client = None
+    baseline = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_payload()))
+    )
+    candidate = service.ingest_trace(
+        TraceIngestRequest.model_validate(json.loads(_candidate_payload(passed=True)))
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request(
+            "POST",
+            "/repairs/verify",
+            json.dumps(
+                {
+                    "baseline_run_id": baseline["run_id"],
+                    "candidate_run_id": candidate["run_id"],
+                }
+            ),
+            {"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        report = json.loads(response.read().decode("utf-8"))
+        connection.close()
+
+        assert response.status == 200
+        assert report["decision"] == "ADOPT"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def _raw_puck_trace_payload() -> str:

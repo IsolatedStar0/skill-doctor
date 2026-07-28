@@ -8,6 +8,7 @@ import {
   NdjsonParser,
   streamBenchmarkRun,
   subscribeAgentRuns,
+  verifyRepair,
 } from "../lib/langgraph-stream.ts";
 
 test("parses NDJSON split across arbitrary chunks", () => {
@@ -191,6 +192,51 @@ test("loads a persisted benchmark parent Run", async () => {
       "http://api.test",
     );
     assert.equal(state.run_id, "bm-saved001");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("posts repair verification request", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), init });
+    return new Response(
+      JSON.stringify({
+        schema_version: "1.0",
+        status: "verified",
+        decision: "ADOPT",
+        policy: "strict",
+        baseline: { run_id: "lg-base001", pass_rate: 0.5 },
+        candidate: { run_id: "lg-cand001", pass_rate: 1 },
+        delta: { pass_rate_delta: 0.5, regression_rate_delta: 0 },
+        checks: [],
+        reasons: [],
+        saved_cases: { included: true, count: 0 },
+        attribution: {},
+        markdown: "# Skill Doctor Repair Verification\n",
+      }),
+      { status: 200 },
+    );
+  };
+
+  try {
+    const report = await verifyRepair(
+      "lg-base001",
+      "lg-cand001",
+      "http://api.test/",
+    );
+
+    assert.equal(report.decision, "ADOPT");
+    assert.equal(requests[0].url, "http://api.test/repairs/verify");
+    assert.equal(requests[0].init.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].init.body), {
+      baseline_run_id: "lg-base001",
+      candidate_run_id: "lg-cand001",
+      include_saved_cases: true,
+      decision_policy: "strict",
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

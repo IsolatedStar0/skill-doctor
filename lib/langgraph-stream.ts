@@ -280,6 +280,55 @@ export type RepairPreview = {
   can_apply_reason: string;
 };
 
+export type RepairVerificationRunSummary = {
+  run_id: string;
+  skill_id: string;
+  status: string;
+  stop_reason: string;
+  pass_rate: number;
+  regression_rate: number;
+  passed: boolean;
+  summary: string;
+  attribution: {
+    cause: string;
+    fault_type: string;
+    action: string;
+  };
+};
+
+export type RepairVerificationReport = {
+  schema_version: "1.0";
+  status: "verified";
+  decision: "ADOPT" | "REJECT";
+  policy: "strict" | "balanced";
+  baseline: RepairVerificationRunSummary;
+  candidate: RepairVerificationRunSummary;
+  delta: {
+    pass_rate_delta: number;
+    regression_rate_delta: number;
+    status_changed: boolean;
+  };
+  checks: Array<{
+    name: string;
+    label: string;
+    expected: unknown;
+    actual: unknown;
+    passed: boolean;
+  }>;
+  reasons: string[];
+  saved_cases: {
+    included: boolean;
+    count: number;
+  };
+  attribution: {
+    baseline_cause: string;
+    baseline_fault_type: string;
+    candidate_cause: string;
+    candidate_fault_type: string;
+  };
+  markdown: string;
+};
+
 export type RunRegistryEvent = {
   type: "run.updated";
   updated_at: string;
@@ -368,6 +417,27 @@ export async function createRepairPreview(runId: string, value?: string) {
     throw new Error(`Repair preview failed with ${response.status}.`);
   }
   return (await response.json()) as RepairPreview;
+}
+
+export async function verifyRepair(
+  baselineRunId: string,
+  candidateRunId: string,
+  value?: string,
+) {
+  const response = await fetch(`${apiBaseUrl(value)}/repairs/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      baseline_run_id: baselineRunId,
+      candidate_run_id: candidateRunId,
+      include_saved_cases: true,
+      decision_policy: "strict",
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Repair verification failed with ${response.status}.`);
+  }
+  return (await response.json()) as RepairVerificationReport;
 }
 
 export async function streamBenchmarkRun(

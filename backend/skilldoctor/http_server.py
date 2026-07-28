@@ -16,6 +16,7 @@ from .models import (
     BenchmarkRequest,
     DiagnosticSuiteRequest,
     RepairPreviewRequest,
+    RepairVerificationRequest,
     RunRequest,
     SaveDiagnosticCaseRequest,
     TraceIngestRequest,
@@ -192,6 +193,8 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                     request = DiagnosticSuiteRequest.model_validate(payload)
                 elif path.startswith("/repairs/preview/"):
                     request = RepairPreviewRequest.model_validate(payload)
+                elif path == "/repairs/verify":
+                    request = RepairVerificationRequest.model_validate(payload)
                 elif path.startswith("/benchmarks"):
                     request = BenchmarkRequest.model_validate(payload)
                 else:
@@ -242,6 +245,15 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                             request,
                         ),
                     )
+                except ValueError as error:
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+                except FileNotFoundError:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "Run not found."})
+                return
+            if path == "/repairs/verify":
+                assert isinstance(request, RepairVerificationRequest)
+                try:
+                    self._json(HTTPStatus.OK, service.verify_repair(request))
                 except ValueError as error:
                     self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
                 except FileNotFoundError:

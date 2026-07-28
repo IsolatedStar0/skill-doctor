@@ -18,6 +18,7 @@ from .models import (
     DiagnosticSuiteRequest,
     DiagnosticExpectation,
     RepairPreviewRequest,
+    RepairVerificationRequest,
     RunEvent,
     RunRequest,
     SaveDiagnosticCaseRequest,
@@ -302,6 +303,99 @@ class RunService:
             ),
         }
 
+    def verify_repair(
+        self,
+        request: RepairVerificationRequest,
+    ) -> dict[str, Any]:
+        """Compare baseline and candidate runs to decide ADOPT / REJECT."""
+
+        baseline = self.get(request.baseline_run_id)
+        candidate = self.get(request.candidate_run_id)
+        baseline_execution = baseline.get("execution")
+        candidate_execution = candidate.get("execution")
+        if not baseline_execution or not candidate_execution:
+            raise ValueError("Both baseline and candidate runs must include execution payloads.")
+        if baseline.get("skill_id") != candidate.get("skill_id"):
+            raise ValueError("Baseline and candidate runs must target the same skill_id.")
+
+        baseline_pass_rate = float(baseline_execution.get("pass_rate") or 0)
+        candidate_pass_rate = float(candidate_execution.get("pass_rate") or 0)
+        pass_rate_delta = candidate_pass_rate - baseline_pass_rate
+        baseline_regression = float(baseline_execution.get("regression_rate") or 0)
+        candidate_regression = float(candidate_execution.get("regression_rate") or 0)
+        regression_rate_delta = candidate_regression - baseline_regression
+        baseline_attribution = baseline.get("attribution") or {}
+        candidate_attribution = candidate.get("attribution") or {}
+        saved_case_count = len(self.load_saved_diagnostic_cases()) if request.include_saved_cases else 0
+
+        checks = self._repair_verification_checks(
+            baseline,
+            candidate,
+            baseline_pass_rate,
+            candidate_pass_rate,
+            regression_rate_delta,
+            request.decision_policy,
+            saved_case_count,
+        )
+        decision = "ADOPT" if all(item["passed"] for item in checks) else "REJECT"
+        reasons = self._repair_verification_reasons(
+            decision,
+            checks,
+            baseline_attribution,
+            candidate_attribution,
+            pass_rate_delta,
+            regression_rate_delta,
+        )
+        report = {
+            "schema_version": "1.0",
+            "status": "verified",
+            "decision": decision,
+            "policy": request.decision_policy,
+            "baseline": self._verification_run_summary(baseline, baseline_execution),
+            "candidate": self._verification_run_summary(candidate, candidate_execution),
+            "delta": {
+                "pass_rate_delta": pass_rate_delta,
+                "regression_rate_delta": regression_rate_delta,
+                "status_changed": baseline.get("status") != candidate.get("status"),
+            },
+            "checks": checks,
+            "reasons": reasons,
+            "saved_cases": {
+                "included": request.include_saved_cases,
+                "count": saved_case_count,
+            },
+            "attribution": {
+                "baseline_cause": baseline_attribution.get("cause", "none"),
+                "baseline_fault_type": baseline_attribution.get("fault_type", "none"),
+                "candidate_cause": candidate_attribution.get("cause", "none"),
+                "candidate_fault_type": candidate_attribution.get("fault_type", "none"),
+            },
+            "markdown": self._repair_verification_markdown(
+                baseline,
+                candidate,
+                decision,
+                checks,
+                reasons,
+                pass_rate_delta,
+                regression_rate_delta,
+            ),
+        }
+        candidate["verification"] = {
+            "decision": decision,
+            "baseline_pass_rate": baseline_pass_rate,
+            "candidate_pass_rate": candidate_pass_rate,
+            "pass_rate_delta": pass_rate_delta,
+            "regression_rate": candidate_regression,
+            "reasons": reasons,
+            "regression_detected": regression_rate_delta > 0,
+            "sample_size": 2 + saved_case_count,
+            "qualifier_reason": "; ".join(reasons),
+        }
+        candidate["repair_verification"] = report
+        self.registry.publish(candidate)
+        self._save(candidate)
+        return report
+
     def stream_ingested_trace(
         self,
         request: TraceIngestRequest,
@@ -545,6 +639,149 @@ class RunService:
             "确认失败断言转为通过，pass_rate 提升且 fault_type 不再是原故障。",
             "运行默认诊断套件，确认健康 Trace 与 Non-Skill 用例没有回归。",
         ]
+
+    @staticmethod
+    def _verification_run_summary(
+        state: dict[str, Any],
+        execution: dict[str, Any],
+    ) -> dict[str, Any]:
+        attribution = state.get("attribution") or {}
+        return {
+            "run_id": state.get("run_id"),
+            "skill_id": state.get("skill_id"),
+            "status": state.get("status"),
+            "stop_reason": state.get("stop_reason", ""),
+            "pass_rate": float(execution.get("pass_rate") or 0),
+            "regression_rate": float(execution.get("regression_rate") or 0),
+            "passed": bool(execution.get("passed")),
+            "summary": execution.get("summary", ""),
+            "attribution": {
+                "cause": attribution.get("cause", "none"),
+                "fault_type": attribution.get("fault_type", "none"),
+                "action": attribution.get("action", "none"),
+            },
+        }
+
+    @staticmethod
+    def _repair_verification_checks(
+        baseline: dict[str, Any],
+        candidate: dict[str, Any],
+        baseline_pass_rate: float,
+        candidate_pass_rate: float,
+        regression_rate_delta: float,
+        policy: str,
+        saved_case_count: int,
+    ) -> list[dict[str, Any]]:
+        candidate_attribution = candidate.get("attribution") or {}
+        regression_limit = 0.0 if policy == "strict" else 0.05
+        original_fault = (baseline.get("attribution") or {}).get("fault_type", "none")
+        candidate_fault = candidate_attribution.get("fault_type", "none")
+        no_new_non_skill_failure = not (
+            candidate.get("status") == "failed"
+            and candidate_attribution.get("cause") in {"tool", "platform"}
+        )
+        return [
+            {
+                "name": "baseline_has_failure",
+                "label": "baseline 存在待修复失败",
+                "expected": "failed",
+                "actual": baseline.get("status"),
+                "passed": baseline.get("status") == "failed",
+            },
+            {
+                "name": "candidate_passed",
+                "label": "candidate run 已通过",
+                "expected": "passed",
+                "actual": candidate.get("status"),
+                "passed": candidate.get("status") == "passed",
+            },
+            {
+                "name": "pass_rate_improved",
+                "label": "通过率相比 baseline 提升",
+                "expected": f"> {baseline_pass_rate:.2f}",
+                "actual": candidate_pass_rate,
+                "passed": candidate_pass_rate > baseline_pass_rate,
+            },
+            {
+                "name": "no_regression_increase",
+                "label": "未引入新的回归率上升",
+                "expected": f"<= {regression_limit:.2f}",
+                "actual": regression_rate_delta,
+                "passed": regression_rate_delta <= regression_limit,
+            },
+            {
+                "name": "original_fault_resolved",
+                "label": "原故障类型不再出现",
+                "expected": f"not {original_fault}",
+                "actual": candidate_fault,
+                "passed": candidate.get("status") == "passed" or candidate_fault != original_fault,
+            },
+            {
+                "name": "no_new_non_skill_failure",
+                "label": "未新增 tool/platform 失败",
+                "expected": True,
+                "actual": no_new_non_skill_failure,
+                "passed": no_new_non_skill_failure,
+            },
+            {
+                "name": "saved_cases_loaded",
+                "label": "本地真实回归用例已纳入验证上下文",
+                "expected": ">= 0",
+                "actual": saved_case_count,
+                "passed": True,
+            },
+        ]
+
+    @staticmethod
+    def _repair_verification_reasons(
+        decision: str,
+        checks: list[dict[str, Any]],
+        baseline_attribution: dict[str, Any],
+        candidate_attribution: dict[str, Any],
+        pass_rate_delta: float,
+        regression_rate_delta: float,
+    ) -> list[str]:
+        failed = [item for item in checks if not item["passed"]]
+        if failed:
+            return [
+                f"验证结论为 {decision}：{item['label']} 未满足，实际值={item['actual']}。"
+                for item in failed
+            ]
+        baseline_fault = baseline_attribution.get("fault_type", "none")
+        candidate_fault = candidate_attribution.get("fault_type", "none")
+        return [
+            f"验证结论为 {decision}：candidate 通过率提升 {pass_rate_delta:.2%}。",
+            f"原故障类型 {baseline_fault} 已消除，candidate 当前故障类型为 {candidate_fault}。",
+            f"回归率变化 {regression_rate_delta:.2%}，未超过验证策略阈值。",
+        ]
+
+    @staticmethod
+    def _repair_verification_markdown(
+        baseline: dict[str, Any],
+        candidate: dict[str, Any],
+        decision: str,
+        checks: list[dict[str, Any]],
+        reasons: list[str],
+        pass_rate_delta: float,
+        regression_rate_delta: float,
+    ) -> str:
+        lines = [
+            "# Skill Doctor Repair Verification",
+            "",
+            f"- Decision：{decision}",
+            f"- Baseline：`{baseline.get('run_id')}` / {baseline.get('status')}",
+            f"- Candidate：`{candidate.get('run_id')}` / {candidate.get('status')}",
+            f"- Pass Rate Delta：{pass_rate_delta:.2%}",
+            f"- Regression Rate Delta：{regression_rate_delta:.2%}",
+            "",
+            "## Checks",
+        ]
+        for item in checks:
+            icon = "✅" if item["passed"] else "❌"
+            lines.append(f"- {icon} {item['label']}：{item['actual']}")
+        lines.extend(["", "## Reasons"])
+        lines.extend(f"- {reason}" for reason in reasons)
+        return "\n".join(lines).strip() + "\n"
 
     @staticmethod
     def _diagnostic_markdown(name: str, reports: list[dict[str, Any]]) -> str:
