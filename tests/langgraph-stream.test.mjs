@@ -5,6 +5,7 @@ import {
   createCandidateSkill,
   getAgentRun,
   getBenchmarkRun,
+  listScenarios,
   listRejectionHistory,
   listAgentRuns,
   NdjsonParser,
@@ -81,6 +82,42 @@ test("loads run registry summaries and selected snapshots", async () => {
       "http://api.test/runs",
       "http://api.test/runs/lg-list001",
     ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("loads scenario catalog", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), "http://api.test/scenarios");
+    return new Response(
+      JSON.stringify({
+        schema_version: "1.0",
+        scenarios: [
+          {
+            id: "content-gap",
+            name: "内容缺口",
+            summary: "Skill 已加载但遗漏关键约束。",
+            category: "skill",
+            skill_id: "spreadsheet-summary",
+            task: "读取全部订单。",
+            expected: "全量汇总",
+            actual: "预览汇总",
+            executor: "fixture",
+            repair_action: "patch_skill",
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  };
+
+  try {
+    const catalog = await listScenarios("http://api.test");
+
+    assert.equal(catalog.scenarios[0].id, "content-gap");
+    assert.equal(catalog.scenarios[0].skill_id, "spreadsheet-summary");
   } finally {
     globalThis.fetch = originalFetch;
   }

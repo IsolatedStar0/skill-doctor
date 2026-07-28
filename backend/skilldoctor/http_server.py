@@ -115,6 +115,9 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
                     {"status": "ok", "orchestrator": "langgraph"},
                 )
                 return
+            if path == "/scenarios":
+                self._json(HTTPStatus.OK, service.list_scenarios())
+                return
             if path == "/runs":
                 self._json(
                     HTTPStatus.OK,

@@ -28,6 +28,35 @@ def test_dependency_free_server_host_can_be_configured(monkeypatch) -> None:
     assert args.host == "127.0.0.1"
 
 
+def test_dependency_free_server_returns_scenario_catalog() -> None:
+    service = RunService(PROJECT_ROOT)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request("GET", "/scenarios")
+        response = connection.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+
+        assert response.status == 200
+        assert payload["schema_version"] == "1.0"
+        assert [item["id"] for item in payload["scenarios"]] == [
+            "content-gap",
+            "loading-miss",
+            "platform-error",
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_dependency_free_server_streams_graph_states(tmp_path: Path) -> None:
     service = RunService(PROJECT_ROOT)
     service.report_directory = tmp_path

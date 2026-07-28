@@ -67,6 +67,11 @@ def health() -> dict[str, str]:
     return {"status": "ok", "orchestrator": "langgraph"}
 
 
+@app.get("/scenarios")
+def list_scenarios() -> dict:
+    return service.list_scenarios()
+
+
 @app.post("/runs")
 def create_run(request: RunRequest) -> dict:
     try:

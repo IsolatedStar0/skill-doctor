@@ -42,6 +42,46 @@ from .workers import (
 )
 
 
+SCENARIO_CATALOG: list[dict[str, Any]] = [
+    {
+        "id": "content-gap",
+        "name": "内容缺口",
+        "summary": "Skill 已加载但遗漏关键约束，期望进入 Skill 修订链路。",
+        "category": "skill",
+        "skill_id": "spreadsheet-summary",
+        "task": "读取 100 行订单 CSV，汇总总营收并输出 Markdown 报告。",
+        "expected": "¥428,650（基于全部 100 行订单）",
+        "actual": "¥82,410（错误地只统计预览的 20 行）",
+        "executor": "fixture",
+        "repair_action": "patch_skill",
+    },
+    {
+        "id": "loading-miss",
+        "name": "加载遗漏",
+        "summary": "Skill 被选中但引用资源缺失，期望归因为 loader 问题。",
+        "category": "loader",
+        "skill_id": "release-checklist",
+        "task": "按仓库规范生成发布检查清单，并包含安全回滚步骤。",
+        "expected": "依据 release-policy references 生成 8 项检查清单",
+        "actual": "只生成 4 项通用检查，缺少回滚和审批门禁",
+        "executor": "fixture",
+        "repair_action": "patch_loader",
+    },
+    {
+        "id": "platform-error",
+        "name": "平台异常",
+        "summary": "执行失败来自外部服务边界，期望拒绝修改 Skill。",
+        "category": "platform",
+        "skill_id": "skill-release",
+        "task": "把验证通过的候选 Skill 发布到远端注册表。",
+        "expected": "注册表返回 release id，候选版本进入 staged 状态",
+        "actual": "registry.publish 返回 403 insufficient_scope",
+        "executor": "fixture",
+        "repair_action": "split_non_skill",
+    },
+]
+
+
 class RunService:
     def __init__(
         self,
@@ -63,6 +103,14 @@ class RunService:
         # which case Skill-Adaptor stages keep using their rule-based
         # deterministic fallbacks.
         self.adaptor_llm_client = build_deepseek_client()
+
+    def list_scenarios(self) -> dict[str, Any]:
+        """Return supported failure scenarios for UI launchers and catalog views."""
+
+        return {
+            "schema_version": "1.0",
+            "scenarios": deepcopy(SCENARIO_CATALOG),
+        }
 
     @property
     def report_directory(self) -> Path:

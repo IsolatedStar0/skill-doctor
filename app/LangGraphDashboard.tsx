@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createCandidateSkill,
   createRepairPreview,
+  listScenarios,
   listRejectionHistory,
   saveRunAsDiagnosticCase,
   streamLangGraphRun,
@@ -15,13 +16,13 @@ import {
   type RepairPreview,
   type RepairVerificationReport,
   type RejectionHistoryResponse,
+  type ScenarioCatalogItem,
 } from "../lib/langgraph-stream";
 import { useRunStore } from "./RunStore";
 import BusinessResultCard from "./BusinessResultCard";
 
 type RunMode = "fixture" | "replay" | "codex";
 type UiStatus = "idle" | "running" | "passed" | "failed" | "error";
-type RunScenario = "content-gap" | "loading-miss" | "platform-error";
 
 const stageCopy: Record<string, string> = {
   prepare: "准备状态",
@@ -74,29 +75,42 @@ const faultTypeCopy: Record<string, string> = {
   unknown: "未知类型",
 };
 
-const scenarioOptions: Array<{
-  id: RunScenario;
-  title: string;
-  summary: string;
-  skillId: string;
-}> = [
+const fallbackScenarioOptions: ScenarioCatalogItem[] = [
   {
     id: "content-gap",
-    title: "内容缺口",
+    name: "内容缺口",
     summary: "Skill 已加载但遗漏关键约束，期望进入 Skill 修订链路。",
-    skillId: "spreadsheet-summary",
+    category: "skill",
+    skill_id: "spreadsheet-summary",
+    task: "读取 100 行订单 CSV，汇总总营收并输出 Markdown 报告。",
+    expected: "¥428,650（基于全部 100 行订单）",
+    actual: "¥82,410（错误地只统计预览的 20 行）",
+    executor: "fixture",
+    repair_action: "patch_skill",
   },
   {
     id: "loading-miss",
-    title: "加载遗漏",
+    name: "加载遗漏",
     summary: "Skill 被选中但引用资源缺失，期望归因为 loader 问题。",
-    skillId: "release-checklist",
+    category: "loader",
+    skill_id: "release-checklist",
+    task: "按仓库规范生成发布检查清单，并包含安全回滚步骤。",
+    expected: "依据 release-policy references 生成 8 项检查清单",
+    actual: "只生成 4 项通用检查，缺少回滚和审批门禁",
+    executor: "fixture",
+    repair_action: "patch_loader",
   },
   {
     id: "platform-error",
-    title: "平台异常",
+    name: "平台异常",
     summary: "执行失败来自外部服务边界，期望拒绝修改 Skill。",
-    skillId: "skill-release",
+    category: "platform",
+    skill_id: "skill-release",
+    task: "把验证通过的候选 Skill 发布到远端注册表。",
+    expected: "注册表返回 release id，候选版本进入 staged 状态",
+    actual: "registry.publish 返回 403 insufficient_scope",
+    executor: "fixture",
+    repair_action: "split_non_skill",
   },
 ];
 
@@ -132,7 +146,8 @@ function tokenBreakdown(usage: LangGraphState["events"][number]["usage"]) {
 
 export default function LangGraphDashboard() {
   const [mode, setMode] = useState<RunMode>("fixture");
-  const [scenario, setScenario] = useState<RunScenario>("content-gap");
+  const [scenario, setScenario] = useState<ScenarioCatalogItem["id"]>("content-gap");
+  const [scenarioCatalog, setScenarioCatalog] = useState<ScenarioCatalogItem[]>(fallbackScenarioOptions);
   const [uiStatus, setUiStatus] = useState<UiStatus>("idle");
   const { snapshot, setSnapshot } = useRunStore();
   const [error, setError] = useState<string | null>(null);
@@ -152,7 +167,7 @@ export default function LangGraphDashboard() {
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
     "http://localhost:8010";
   const selectedScenario =
-    scenarioOptions.find((item) => item.id === scenario) ?? scenarioOptions[0];
+    scenarioCatalog.find((item) => item.id === scenario) ?? scenarioCatalog[0];
 
   useEffect(
     () => () => {
@@ -160,6 +175,27 @@ export default function LangGraphDashboard() {
     },
     [],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    listScenarios(apiUrl)
+      .then((catalog) => {
+        if (!cancelled && catalog.scenarios.length) {
+          setScenarioCatalog(catalog.scenarios);
+          setScenario((current) =>
+            catalog.scenarios.some((item) => item.id === current)
+              ? current
+              : catalog.scenarios[0].id,
+          );
+        }
+      })
+      .catch(() => {
+        // Keep the local fallback so the demo remains usable offline.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiUrl]);
 
   const totalTokens = useMemo(() => tokens(snapshot), [snapshot]);
   const graphEventCount =
@@ -211,7 +247,7 @@ export default function LangGraphDashboard() {
         {
           executor: mode,
           scenario,
-          skill_id: mode === "fixture" ? selectedScenario.skillId : "tdd-workflow",
+          skill_id: mode === "fixture" ? selectedScenario.skill_id : "tdd-workflow",
           stream_delay_ms: mode === "codex" ? 0 : 220,
           codex_timeout_ms: 180_000,
         },
@@ -362,7 +398,7 @@ export default function LangGraphDashboard() {
         </div>
         {mode === "fixture" ? (
           <div className="graph-mode" aria-label="Failure scenario">
-            {scenarioOptions.map((item) => (
+            {scenarioCatalog.map((item) => (
               <button
                 type="button"
                 key={item.id}
@@ -371,7 +407,7 @@ export default function LangGraphDashboard() {
                 disabled={uiStatus === "running"}
               >
                 <span>{item.summary}</span>
-                {item.title}
+                {item.name}
               </button>
             ))}
           </div>

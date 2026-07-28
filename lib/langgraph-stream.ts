@@ -426,6 +426,24 @@ export type BenchmarkRunRequest = {
   codex_timeout_ms?: number;
 };
 
+export type ScenarioCatalogItem = {
+  id: LangGraphRunRequest["scenario"];
+  name: string;
+  summary: string;
+  category: "skill" | "loader" | "platform" | "tool";
+  skill_id: string;
+  task: string;
+  expected: string;
+  actual: string;
+  executor: "fixture" | "replay" | "codex";
+  repair_action: string;
+};
+
+export type ScenarioCatalogResponse = {
+  schema_version: "1.0";
+  scenarios: ScenarioCatalogItem[];
+};
+
 function apiBaseUrl(value?: string) {
   return (
     value ??
@@ -441,6 +459,14 @@ export async function listAgentRuns(value?: string) {
   }
   const payload = (await response.json()) as { runs: RunSummary[] };
   return payload.runs;
+}
+
+export async function listScenarios(value?: string) {
+  const response = await fetch(`${apiBaseUrl(value)}/scenarios`);
+  if (!response.ok) {
+    throw new Error(`Scenario catalog request failed with ${response.status}.`);
+  }
+  return (await response.json()) as ScenarioCatalogResponse;
 }
 
 export async function getAgentRun(runId: string, value?: string) {
