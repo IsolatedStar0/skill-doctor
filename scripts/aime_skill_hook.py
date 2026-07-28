@@ -32,7 +32,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-__all__ = ["push_to_skill_doctor"]
+__all__ = ["push_to_skill_doctor", "get_skill_content"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENDPOINT = "http://127.0.0.1:8010"
@@ -66,6 +66,87 @@ def _resolve(cli_value: str | None, env_key: str, default: str | None = None) ->
         return env_value
     dotenv = _load_dotenv(PROJECT_ROOT / ".env")
     return dotenv.get(env_key) or default
+
+
+# --------------------------------------------------------------------------- #
+# Skill content auto-loader                                                    #
+# --------------------------------------------------------------------------- #
+
+# Ordered list of files (relative to a skill's directory) that make up the
+# canonical "skill content" bundle. ``SKILL.md`` first, then the two
+# well-known references, then anything else under ``references/``.
+_PRIMARY_SKILL_FILES = (
+    "SKILL.md",
+    "references/noise-judge-rules.md",
+    "references/output-contract.md",
+)
+
+
+def get_skill_content(skill_id: str) -> str:
+    """Assemble the full skill body for ``skill_id`` from ``user_skills/``.
+
+    Reads, in order:
+
+    * ``user_skills/<skill_id>/SKILL.md``
+    * ``user_skills/<skill_id>/references/noise-judge-rules.md``
+    * ``user_skills/<skill_id>/references/output-contract.md``
+    * Any remaining ``user_skills/<skill_id>/references/*.md`` (sorted).
+
+    Each existing file is appended to the returned string prefixed by a
+    ``# <relative-path>`` heading so DeepSeek can see the section boundaries.
+    Missing files are skipped silently. If the skill directory itself does
+    not exist (or ``skill_id`` is empty), returns ``""`` — the function
+    never raises so the on_finish bridge stays crash-free.
+    """
+
+    if not skill_id:
+        return ""
+
+    skill_dir = PROJECT_ROOT / "user_skills" / skill_id
+    try:
+        if not skill_dir.is_dir():
+            return ""
+    except OSError:
+        return ""
+
+    ordered: list[Path] = []
+    seen: set[Path] = set()
+
+    for rel in _PRIMARY_SKILL_FILES:
+        candidate = skill_dir / rel
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if candidate.is_file() and resolved not in seen:
+            ordered.append(candidate)
+            seen.add(resolved)
+
+    references_dir = skill_dir / "references"
+    if references_dir.is_dir():
+        try:
+            extras = sorted(references_dir.glob("*.md"))
+        except OSError:
+            extras = []
+        for extra in extras:
+            try:
+                resolved = extra.resolve()
+            except OSError:
+                continue
+            if extra.is_file() and resolved not in seen:
+                ordered.append(extra)
+                seen.add(resolved)
+
+    sections: list[str] = []
+    for path in ordered:
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        rel_name = path.relative_to(skill_dir).as_posix()
+        sections.append(f"# {rel_name}\n\n{body.rstrip()}\n")
+
+    return "\n".join(sections)
 
 
 def _is_nonempty(value: Any) -> bool:
@@ -144,7 +225,9 @@ def push_to_skill_doctor(
         Aime skill identifier (required — skill-doctor keys everything by it).
     skill_content:
         The raw skill body / prompt. Enables DeepSeek to reason over the skill
-        when checks fail. Optional but strongly recommended.
+        when checks fail. If left as ``None``, the bridge auto-loads the skill
+        body from ``user_skills/<skill_id>/`` via :func:`get_skill_content`.
+        Pass ``""`` (empty string) to explicitly opt out of the auto-load.
     runtime_events:
         List of ``{stage, status, message, ...}`` dicts describing skill
         execution stages.
@@ -184,6 +267,12 @@ def push_to_skill_doctor(
         if not skill_id:
             print("[skill-doctor] skip: skill_id is required.", file=sys.stderr)
             return None
+
+        # Auto-load skill body from user_skills/<skill_id>/ when the caller
+        # did not pass one explicitly. An empty string is treated as an
+        # explicit opt-out (do NOT auto-fill in that case).
+        if skill_content is None:
+            skill_content = get_skill_content(skill_id)
 
         merged_metadata: dict[str, Any] = {}
         if trace_metadata:
@@ -251,6 +340,54 @@ if __name__ == "__main__":
     # Requires a local skill-doctor backend on http://127.0.0.1:8010 with
     # SKILL_DOCTOR_INGEST_API_KEY exported (or set in ../.env).
 
+    # --- Part 1: exercise get_skill_content() against a real user_skills/ ---
+    # Auto-load path. We create a throwaway user_skills/<demo>/ tree, verify
+    # the loader returns a non-empty bundle, and clean up afterwards.
+    import shutil
+
+    demo_skill_id = "aime-skill-hook-selftest"
+    demo_skill_dir = PROJECT_ROOT / "user_skills" / demo_skill_id
+    demo_skill_dir_created = not demo_skill_dir.exists()
+    try:
+        (demo_skill_dir / "references").mkdir(parents=True, exist_ok=True)
+        (demo_skill_dir / "SKILL.md").write_text(
+            "# demo-skill\nAlways answer with 'pong' when asked to ping.\n",
+            encoding="utf-8",
+        )
+        (demo_skill_dir / "references" / "noise-judge-rules.md").write_text(
+            "# noise judge rules\n- ignore transient flakes\n", encoding="utf-8"
+        )
+        (demo_skill_dir / "references" / "output-contract.md").write_text(
+            "# output contract\nReturn strict JSON.\n", encoding="utf-8"
+        )
+        (demo_skill_dir / "references" / "extra-notes.md").write_text(
+            "# extra\nMore context.\n", encoding="utf-8"
+        )
+
+        loaded = get_skill_content(demo_skill_id)
+        assert loaded, "get_skill_content returned empty for a populated skill dir"
+        print(
+            f"[demo] get_skill_content('{demo_skill_id}') → "
+            f"{len(loaded)} chars, "
+            f"sections={loaded.count('# ')}"
+        )
+
+        # Also confirm the missing-dir path returns an empty string safely.
+        missing = get_skill_content("does-not-exist-xyz")
+        assert missing == "", "get_skill_content should return '' for missing dirs"
+        print("[demo] get_skill_content('does-not-exist-xyz') → '' (as expected)")
+    finally:
+        if demo_skill_dir_created and demo_skill_dir.exists():
+            shutil.rmtree(demo_skill_dir, ignore_errors=True)
+            # Also drop an empty user_skills/ we may have just created.
+            parent = demo_skill_dir.parent
+            try:
+                if parent.is_dir() and not any(parent.iterdir()):
+                    parent.rmdir()
+            except OSError:
+                pass
+
+    # --- Part 2: end-to-end bridge push against a local skill-doctor ---
     demo_skill_content = (
         "# demo-skill\n"
         "Always answer with the string 'pong' when asked to ping.\n"
