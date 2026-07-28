@@ -255,8 +255,21 @@ def test_run_service_streams_worker_events_before_execute_finishes(
     assert token_events[0]["stage"] == "codex.turn"
 
 
-def test_live_request_resolves_benchmark_task_and_skill() -> None:
-    service = RunService(PROJECT_ROOT)
+def test_live_request_resolves_benchmark_task_and_skill(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "benchmarks" / "cache"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "swe_skills_bench.jsonl").write_text(
+        json.dumps(
+            {
+                "skill_id": "tdd-workflow",
+                "task_prompt": "Implement the feature in src/calculator.py.",
+                "skill_document": "---\nname: tdd-workflow\n---\nRequire 80% coverage.",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = RunService(tmp_path)
     state = service._initial_state(
         RunRequest(executor="codex", skill_id="tdd-workflow"),
         "lg-test",
