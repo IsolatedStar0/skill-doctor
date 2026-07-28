@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-07-28T13:46:30.099Z",
+  "sourceCount": 5,
+  "totalPairs": 5,
+  "completedPairs": 5,
+  "improvedPairs": 5,
+  "tiedPairs": 0,
+  "regressedPairs": 0,
+  "repairSuccessRate": 1,
+  "regressionDetectionRate": 1,
+  "averagePassRateDelta": 0.5,
+  "averageTokenOverheadRate": 0.36585365853658536,
+  "averageDurationDeltaMs": 220,
+  "averageTokenDelta": 450,
+  "scenarioBreakdown": [
+    {
+      "scenario": "content-gap",
+      "runs": 5,
+      "completedPairs": 5,
+      "averagePassRateDelta": 0.5,
+      "repairSuccessRate": 1
+    }
+  ],
+  "recentRuns": [
+    {
+      "runId": "bm-be4220ae25c5",
+      "scenario": "content-gap",
+      "status": "completed",
+      "outcome": "improved",
+      "passRateDelta": 0.5,
+      "tokenDelta": 450,
+      "generatedAt": "2026-07-28T09:26:08.246741+00:00"
+    },
+    {
+      "runId": "bm-3735d473f6b1",
+      "scenario": "content-gap",
+      "status": "completed",
+      "outcome": "improved",
+      "passRateDelta": 0.5,
+      "tokenDelta": 450,
+      "generatedAt": "2026-07-28T09:26:05.707588+00:00"
+    },
+    {
+      "runId": "bm-3d17d183d8e2",
+      "scenario": "content-gap",
+      "status": "completed",
+      "outcome": "improved",
+      "passRateDelta": 0.5,
+      "tokenDelta": 450,
+      "generatedAt": "2026-07-28T09:26:02.395766+00:00"
+    },
+    {
+      "runId": "bm-766d067f95ba",
+      "scenario": "content-gap",
+      "status": "completed",
+      "outcome": "improved",
+      "passRateDelta": 0.5,
+      "tokenDelta": 450,
+      "generatedAt": "2026-07-28T09:25:52.233867+00:00"
+    },
+    {
+      "runId": "bm-3b6cef4ac2b0",
+      "scenario": "content-gap",
+      "status": "completed",
+      "outcome": "improved",
+      "passRateDelta": 0.5,
+      "tokenDelta": 450,
+      "generatedAt": "2026-07-28T06:06:27.943284+00:00"
+    }
+  ]
+}

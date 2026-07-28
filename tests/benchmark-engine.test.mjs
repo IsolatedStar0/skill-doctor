@@ -4,6 +4,7 @@ import {
   compareBenchmarkRuns,
   summarizePairedResults,
 } from "../lib/benchmark-engine.ts";
+import { summarizeBenchmarkReports } from "../lib/benchmark-summary.ts";
 
 function run(condition, passRate, tokens, passedIds) {
   const assertions = ["task", "skill"].map((id) => ({
@@ -96,4 +97,39 @@ test("summarizes only completed pairs", () => {
   assert.equal(summary.completedPairs, 1);
   assert.equal(summary.improved, 1);
   assert.equal(summary.averagePassRateDelta, 0.5);
+});
+
+test("summarizes persisted benchmark reports for resume metrics", () => {
+  const pair = compareBenchmarkRuns(
+    "demo",
+    "Demo",
+    "test",
+    run("without_skill", 0.5, 100, ["task"]),
+    run("with_skill", 1, 125, ["task", "skill"]),
+  );
+  const summary = summarizeBenchmarkReports([
+    {
+      run_kind: "benchmark",
+      run_id: "bm-test001",
+      scenario: "content-gap",
+      status: "completed",
+      report: {
+        schemaVersion: "1.0",
+        runId: "bm-test001",
+        generatedAt: "2026-07-28T00:00:00Z",
+        executor: "fixture",
+        taskKind: "knowledge-probe",
+        isModelResult: false,
+        dataset: { name: "test", sha256: "", selectedSkills: ["demo"] },
+        summary: summarizePairedResults([pair]),
+        pairs: [pair],
+      },
+    },
+  ]);
+
+  assert.equal(summary.sourceCount, 1);
+  assert.equal(summary.completedPairs, 1);
+  assert.equal(summary.repairSuccessRate, 1);
+  assert.equal(summary.averagePassRateDelta, 0.5);
+  assert.equal(summary.scenarioBreakdown[0].scenario, "content-gap");
 });

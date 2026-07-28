@@ -20,6 +20,7 @@
     "analyze": "node --experimental-strip-types scripts/analyze-trace.mjs",
     "bench:fetch": "node scripts/fetch-swe-skills-bench.mjs",
     "bench:paired": "node --experimental-strip-types scripts/run-paired-codex-benchmark.mjs",
+    "bench:summary": "node --experimental-strip-types scripts/generate-benchmark-summary.mjs",
     "bench:skills": "node --experimental-strip-types scripts/run-codex-skill-smoke.mjs",
     "codex:import": "node --experimental-strip-types scripts/import-codex-jsonl.mjs",
     "record:example": "node --experimental-strip-types examples/instrumented-agent.mjs",

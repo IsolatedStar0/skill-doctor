@@ -86,7 +86,10 @@ def _normalize_attribution_result(
                 "explanation": "Trace passed all checks; no fault attribution was produced.",
             }
         )
-    elif result.fault_type == FaultType.SKILL_WRONG.value and result.cause != "skill":
+    elif (
+        result.fault_type == FaultType.SKILL_WRONG.value
+        and result.cause not in {"skill", "loader"}
+    ):
         updates.update(
             {
                 "taxonomy": "Content Gap",
@@ -94,6 +97,13 @@ def _normalize_attribution_result(
                 "action": "patch_skill",
                 "responsibility": max(result.responsibility, 0.85),
                 "confidence": max(result.confidence, 0.8),
+            }
+        )
+    elif result.cause == "loader" and result.action == "patch_loader":
+        updates.update(
+            {
+                "taxonomy": "Loading Miss",
+                "fault_type": FaultType.SKILL_MISSING.value,
             }
         )
     elif result.cause in {"tool", "platform"} and result.action != "split_non_skill":

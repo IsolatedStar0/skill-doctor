@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install backend test dependencies
+        run: python -m pip install -e "backend[dev,api,observability]"
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run Node tests
+        run: node --experimental-strip-types --test "tests/*.test.mjs"
+
+      - name: Run Python tests
+        run: python -m pytest backend/tests -q --basetemp=.pytest-tmp
+
+      - name: Verify benchmark summary generation
+        run: npm run bench:summary
+

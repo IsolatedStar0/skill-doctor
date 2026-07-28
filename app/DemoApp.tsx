@@ -15,6 +15,7 @@ import {
   TraceValidationError,
 } from "../lib/trace-adapter";
 import type { PairedBenchmarkReport } from "../lib/benchmark-engine";
+import type { BenchmarkEvaluationSummary } from "../lib/benchmark-summary";
 import {
   runDefaultDiagnostics,
   streamBenchmarkRun,
@@ -28,6 +29,7 @@ import {
   runEvidenceId,
 } from "../lib/run-view-adapter";
 import benchmarkReportJson from "../public/benchmarks/latest.json";
+import evaluationSummaryJson from "../reports/evaluation-summary.json";
 import LangGraphDashboard from "./LangGraphDashboard";
 import { useRunStore } from "./RunStore";
 
@@ -38,6 +40,8 @@ type View =
   | "diagnosis"
   | "patch"
   | "benchmark"
+  | "evaluation"
+  | "architecture"
   | "diagnostics"
   | "orchestrator";
 
@@ -48,13 +52,17 @@ const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "diagnosis", label: "故障归因", eyebrow: "03" },
   { id: "patch", label: "修复验证", eyebrow: "04" },
   { id: "benchmark", label: "配对评测", eyebrow: "05" },
-  { id: "diagnostics", label: "诊断报告", eyebrow: "06" },
-  { id: "orchestrator", label: "自愈链路", eyebrow: "07" },
+  { id: "evaluation", label: "评测指标", eyebrow: "06" },
+  { id: "architecture", label: "Agent 架构", eyebrow: "07" },
+  { id: "diagnostics", label: "诊断报告", eyebrow: "08" },
+  { id: "orchestrator", label: "自愈链路", eyebrow: "09" },
 ];
 
 const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
 const benchmarkReport =
   benchmarkReportJson as unknown as PairedBenchmarkReport;
+const evaluationSummary =
+  evaluationSummaryJson as unknown as BenchmarkEvaluationSummary;
 
 function Percent({ value }: { value: number }) {
   return <>{Math.round(value * 100)}%</>;
@@ -355,6 +363,204 @@ function signedDuration(value: number | null) {
   if (value === null) return "N/A";
   const seconds = value / 1000;
   return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
+}
+
+function signedNumber(value: number | null) {
+  if (value === null) return "N/A";
+  return `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString("zh-CN")}`;
+}
+
+function EvaluationDashboard({
+  summary,
+}: {
+  summary: BenchmarkEvaluationSummary;
+}) {
+  return (
+    <section className="evaluation-view">
+      <div className="section-intro evaluation-intro">
+        <div>
+          <span className="kicker">Benchmark Summary / 可复现评测</span>
+          <h2>
+            用固定指标证明 Agent Skill 的
+            <em>收益、成本与安全边界。</em>
+          </h2>
+        </div>
+        <div className="benchmark-run-meta">
+          <span>报告来源</span>
+          <code>{summary.sourceCount} benchmark snapshots</code>
+          <small>{new Date(summary.generatedAt).toLocaleString("zh-CN")}</small>
+        </div>
+      </div>
+
+      <div className="evaluation-kpis">
+        <article className="panel">
+          <span>修复成功率</span>
+          <strong>{plainPercent(summary.repairSuccessRate)}</strong>
+          <small>{summary.improvedPairs}/{summary.completedPairs} completed pairs improved</small>
+        </article>
+        <article className="panel">
+          <span>平均通过率提升</span>
+          <strong>{signedPercent(summary.averagePassRateDelta)}</strong>
+          <small>Control → Treatment 的平均 pass-rate delta</small>
+        </article>
+        <article className="panel">
+          <span>回归检出门禁</span>
+          <strong>{plainPercent(summary.regressionDetectionRate)}</strong>
+          <small>{summary.regressedPairs} 个 regressed pair 进入门禁统计</small>
+        </article>
+        <article className="panel">
+          <span>Token 成本</span>
+          <strong>{signedNumber(summary.averageTokenDelta)}</strong>
+          <small>平均 Token delta / overhead {signedPercent(summary.averageTokenOverheadRate)}</small>
+        </article>
+      </div>
+
+      <div className="evaluation-grid">
+        <article className="panel evaluation-breakdown">
+          <div className="panel-heading">
+            <span>场景分布</span>
+            <strong>{summary.totalPairs} Pairs</strong>
+          </div>
+          {summary.scenarioBreakdown.map((item) => (
+            <div key={item.scenario} className="evaluation-row">
+              <div>
+                <strong>{item.scenario}</strong>
+                <small>{item.runs} runs · {item.completedPairs} completed</small>
+              </div>
+              <span>{signedPercent(item.averagePassRateDelta)}</span>
+              <i style={{ width: `${Math.max(4, item.repairSuccessRate * 100)}%` }} />
+            </div>
+          ))}
+        </article>
+
+        <article className="panel evaluation-breakdown">
+          <div className="panel-heading">
+            <span>最近评测快照</span>
+            <strong>Regression-ready</strong>
+          </div>
+          {summary.recentRuns.map((run) => (
+            <div key={run.runId} className="evaluation-row compact">
+              <div>
+                <strong>{run.runId}</strong>
+                <small>{run.scenario} · {run.status} · {run.outcome}</small>
+              </div>
+              <span>{signedPercent(run.passRateDelta)}</span>
+              <code>{signedNumber(run.tokenDelta)} tok</code>
+            </div>
+          ))}
+        </article>
+      </div>
+    </section>
+  );
+}
+
+const architectureStages = [
+  {
+    id: "trace-ingest",
+    name: "Trace Ingest",
+    role: "接入真实/模拟 Agent 执行轨迹，统一 runtime events、assertions、token usage。",
+    inputs: ["Aime Trace", "Codex JSONL", "Fixture Run"],
+    outputs: ["Normalized ExecutionResult"],
+  },
+  {
+    id: "evidence",
+    name: "Evidence Builder",
+    role: "冻结失败证据与 artifact refs，保证后续修复和报告可审计。",
+    inputs: ["ExecutionResult", "Assertions"],
+    outputs: ["Evidence Snapshot", "sha256 refs"],
+  },
+  {
+    id: "attribution",
+    name: "Attribution Agent",
+    role: "定位 t*、fault chain 与责任边界，区分 content-gap / loading-miss / platform-error。",
+    inputs: ["Trace", "Skill content", "Business signals"],
+    outputs: ["Fault taxonomy", "Repair action"],
+  },
+  {
+    id: "planner",
+    name: "Repair Planner",
+    role: "根据归因选择 patch_skill、patch_loader 或 split_non_skill，生成最小修复原则。",
+    inputs: ["Attribution", "Reject Memory"],
+    outputs: ["Candidate plan", "Constraints"],
+  },
+  {
+    id: "candidate",
+    name: "Candidate Generator",
+    role: "生成只读候选 Skill，不覆盖生产版本，并记录可解释 patch。",
+    inputs: ["Base Skill", "Repair plan"],
+    outputs: ["Candidate Skill", "Patch diff"],
+  },
+  {
+    id: "verifier",
+    name: "Regression Verifier",
+    role: "运行默认+保存用例，使用 ADOPT/REJECT 门禁检查修复收益与回归风险。",
+    inputs: ["Candidate", "Diagnostic suite"],
+    outputs: ["Validation report", "Decision"],
+  },
+  {
+    id: "memory",
+    name: "Reject Memory + Storage",
+    role: "持久化失败候选和运行资产，支持 File/SQLite 后端与后续 Postgres 扩展。",
+    inputs: ["Rejected candidates", "Runs", "Benchmarks"],
+    outputs: ["Constraints", "Reports"],
+  },
+];
+
+function ArchitectureDashboard() {
+  return (
+    <section className="architecture-view">
+      <div className="section-intro architecture-intro">
+        <div>
+          <span className="kicker">Agent Architecture / 多阶段自愈工作流</span>
+          <h2>
+            从失败 Trace 到候选修复，形成
+            <em>可解释、可回归、可记忆</em> 的闭环。
+          </h2>
+        </div>
+        <div className="architecture-badge">
+          <span>LangGraph Pipeline</span>
+          <strong>{architectureStages.length} stages</strong>
+          <small>Trace → Evidence → Attribution → Repair → Verify → Memory</small>
+        </div>
+      </div>
+
+      <div className="architecture-flow">
+        {architectureStages.map((stage, index) => (
+          <article className="panel architecture-stage" key={stage.id}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <strong>{stage.name}</strong>
+            <p>{stage.role}</p>
+            <div>
+              <small>Inputs</small>
+              {stage.inputs.map((item) => <code key={item}>{item}</code>)}
+            </div>
+            <div>
+              <small>Outputs</small>
+              {stage.outputs.map((item) => <code key={item}>{item}</code>)}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="architecture-principles">
+        <article className="panel">
+          <span>Safety Gate</span>
+          <strong>默认拒绝风险变更</strong>
+          <p>所有候选必须通过 suite-level validation；tool/platform 失败不会修改 Skill。</p>
+        </article>
+        <article className="panel">
+          <span>Memory</span>
+          <strong>避免重复失败方案</strong>
+          <p>Reject Memory 会在后续生成中注入约束，并拦截完全重复 patch。</p>
+        </article>
+        <article className="panel">
+          <span>Observability</span>
+          <strong>每个决策都有证据</strong>
+          <p>保留 evidence snapshot、runtime events、token usage 和 markdown report。</p>
+        </article>
+      </div>
+    </section>
+  );
 }
 
 function BenchmarkDashboard({
@@ -1230,7 +1436,11 @@ export default function DemoApp() {
           </div>
         )}
 
-        {view !== "benchmark" && view !== "diagnostics" && view !== "orchestrator" && (
+        {view !== "benchmark" &&
+          view !== "evaluation" &&
+          view !== "architecture" &&
+          view !== "diagnostics" &&
+          view !== "orchestrator" && (
           <>
             <section
               className="scenario-switcher"
@@ -1450,6 +1660,12 @@ export default function DemoApp() {
             onOpenChild={(runId) => void openChildRun(runId)}
           />
         )}
+
+        {view === "evaluation" && (
+          <EvaluationDashboard summary={evaluationSummary} />
+        )}
+
+        {view === "architecture" && <ArchitectureDashboard />}
 
         {view === "diagnostics" && <DiagnosticsDashboard />}
 

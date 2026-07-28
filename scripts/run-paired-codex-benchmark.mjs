@@ -264,6 +264,9 @@ async function runCondition({
       : "Do not inspect unrelated files, do not modify files, and do not execute the implementation. Return the requested JSON only. Keep every checklist item concise but preserve exact filenames, thresholds, components, and verification requirements.",
     "",
     taskPrompt,
+    condition === "with_skill" && skillContent
+      ? `\nInstalled Skill:\n${skillContent}`
+      : "",
   ].join("\n");
 
   try {
