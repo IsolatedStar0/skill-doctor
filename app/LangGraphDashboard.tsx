@@ -215,6 +215,7 @@ export default function LangGraphDashboard() {
     : Math.min(96, Math.round((graphEventCount / 9) * 100));
   const skillContentLength = snapshot?.skill_content?.trim().length ?? 0;
   const hasSkillContent = skillContentLength > 0;
+  const latestEvent = snapshot?.events.at(-1);
   const defaultBaselineRunId =
     snapshot?.executor === "trace-ingest"
       ? (snapshot.parent_run_id ?? (snapshot.status === "failed" ? snapshot.run_id : ""))
@@ -367,77 +368,110 @@ export default function LangGraphDashboard() {
       </div>
 
       <div className="graph-control panel">
-        <div className="graph-mode" aria-label="LangGraph executor">
-          <button
-            type="button"
-            className={mode === "fixture" ? "active" : ""}
-            onClick={() => setMode("fixture")}
-            disabled={uiStatus === "running"}
-          >
-            <span>{modeCopy.fixture.eyebrow}</span>
-            {modeCopy.fixture.title}
-          </button>
-          <button
-            type="button"
-            className={mode === "replay" ? "active" : ""}
-            onClick={() => setMode("replay")}
-            disabled={uiStatus === "running"}
-          >
-            <span>{modeCopy.replay.eyebrow}</span>
-            {modeCopy.replay.title}
-          </button>
-          <button
-            type="button"
-            className={mode === "codex" ? "active" : ""}
-            onClick={() => setMode("codex")}
-            disabled={uiStatus === "running"}
-          >
-            <span>{modeCopy.codex.eyebrow}</span>
-            {modeCopy.codex.title}
-          </button>
-        </div>
-        {mode === "fixture" ? (
-          <div className="graph-mode" aria-label="Failure scenario">
-            {scenarioCatalog.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                className={scenario === item.id ? "active" : ""}
-                onClick={() => setScenario(item.id)}
-                disabled={uiStatus === "running"}
-              >
-                <span>{item.summary}</span>
-                {item.name}
-              </button>
-            ))}
+        <div className="graph-control-main">
+          <div className="graph-control-header">
+            <span>运行入口</span>
+            <strong>先选执行方式，再选择要演示的故障类型。</strong>
+            <p>
+              页面会把控制面、实时指标、事件时间线和最终决策拆成四块，便于面试时按“启动 → 观察 → 归因 → 验证”讲解。
+            </p>
           </div>
-        ) : null}
-        <div className="graph-api">
-          <span>流式接口</span>
-          <code>{apiUrl}/runs/stream</code>
-          {snapshot?.observability?.trace_url ? (
-            <a
-              href={snapshot.observability.trace_url}
-              target="_blank"
-              rel="noreferrer"
+          <div className="graph-mode graph-executor-mode" aria-label="LangGraph executor">
+            <button
+              type="button"
+              className={mode === "fixture" ? "active" : ""}
+              onClick={() => setMode("fixture")}
+              disabled={uiStatus === "running"}
             >
-              在 LangSmith 查看 ↗
-            </a>
-          ) : (
-            <small>
-              LangSmith {snapshot?.observability?.status ?? "可选"}
-            </small>
-          )}
+              <span>{modeCopy.fixture.eyebrow}</span>
+              {modeCopy.fixture.title}
+            </button>
+            <button
+              type="button"
+              className={mode === "replay" ? "active" : ""}
+              onClick={() => setMode("replay")}
+              disabled={uiStatus === "running"}
+            >
+              <span>{modeCopy.replay.eyebrow}</span>
+              {modeCopy.replay.title}
+            </button>
+            <button
+              type="button"
+              className={mode === "codex" ? "active" : ""}
+              onClick={() => setMode("codex")}
+              disabled={uiStatus === "running"}
+            >
+              <span>{modeCopy.codex.eyebrow}</span>
+              {modeCopy.codex.title}
+            </button>
+          </div>
+          {mode === "fixture" ? (
+            <div className="graph-mode graph-scenario-mode" aria-label="Failure scenario">
+              {scenarioCatalog.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={scenario === item.id ? "active" : ""}
+                  onClick={() => setScenario(item.id)}
+                  disabled={uiStatus === "running"}
+                >
+                  <span>{item.summary}</span>
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {uiStatus === "running" ? (
-          <button className="graph-run secondary" type="button" onClick={cancel}>
-            停止运行
-          </button>
-        ) : (
-          <button className="graph-run" type="button" onClick={run}>
-            启动 LangGraph <b>→</b>
-          </button>
-        )}
+
+        <aside className="graph-run-card">
+          <span>当前配置</span>
+          <strong>{mode === "fixture" ? selectedScenario.name : modeCopy[mode].title}</strong>
+          <p>
+            {mode === "fixture"
+              ? selectedScenario.summary
+              : "连接真实执行链路后，会持续流出 Codex SDK / LangGraph 节点事件。"}
+          </p>
+          <dl>
+            <div>
+              <dt>执行模式</dt>
+              <dd>{modeCopy[mode].eyebrow}</dd>
+            </div>
+            <div>
+              <dt>Skill</dt>
+              <dd>{mode === "fixture" ? selectedScenario.skill_id : "tdd-workflow"}</dd>
+            </div>
+            <div>
+              <dt>最近事件</dt>
+              <dd>{latestEvent ? (stageCopy[latestEvent.stage] ?? latestEvent.stage) : "等待启动"}</dd>
+            </div>
+          </dl>
+          <div className="graph-api">
+            <span>流式接口</span>
+            <code>{apiUrl}/runs/stream</code>
+            {snapshot?.observability?.trace_url ? (
+              <a
+                href={snapshot.observability.trace_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                在 LangSmith 查看 ↗
+              </a>
+            ) : (
+              <small>
+                LangSmith {snapshot?.observability?.status ?? "可选"}
+              </small>
+            )}
+          </div>
+          {uiStatus === "running" ? (
+            <button className="graph-run secondary" type="button" onClick={cancel}>
+              停止运行
+            </button>
+          ) : (
+            <button className="graph-run" type="button" onClick={run}>
+              启动 LangGraph <b>→</b>
+            </button>
+          )}
+        </aside>
       </div>
 
       {error && (
@@ -655,162 +689,158 @@ export default function LangGraphDashboard() {
         </article>
       ) : null}
 
-      <article className="graph-timeline panel">
-        <div className="panel-heading">
-          <span>LangGraph 事件时间线</span>
-          <strong>{snapshot?.status ? (statusCopy[snapshot.status] ?? snapshot.status) : "待启动"}</strong>
-        </div>
-        {snapshot?.events.length ? (
-          <div className="graph-event-list">
-            {snapshot.events.map((event) => (
-              <div
-                className={`graph-event event-${event.status}${
-                  event.stage.startsWith("codex.") ? " codex-event" : ""
-                }`}
-                key={`${event.sequence}-${event.stage}`}
-              >
-                <span className="event-index">
-                  {String(event.sequence).padStart(2, "0")}
-                </span>
-                <i />
-                <div>
-                  <small>
-                    第 {event.attempt} 轮 / {statusCopy[event.status] ?? event.status}
-                  </small>
-                  <strong>{stageCopy[event.stage] ?? event.stage}</strong>
-                  <p>{event.message}</p>
-                </div>
-                <dl>
+      <div className="graph-observe-grid">
+        <article className="graph-timeline panel">
+          <div className="panel-heading">
+            <span>LangGraph 事件时间线</span>
+            <strong>{snapshot?.status ? (statusCopy[snapshot.status] ?? snapshot.status) : "待启动"}</strong>
+          </div>
+          {snapshot?.events.length ? (
+            <div className="graph-event-list">
+              {snapshot.events.map((event) => (
+                <div
+                  className={`graph-event event-${event.status}${
+                    event.stage.startsWith("codex.") ? " codex-event" : ""
+                  }`}
+                  key={`${event.sequence}-${event.stage}`}
+                >
+                  <span className="event-index">
+                    {String(event.sequence).padStart(2, "0")}
+                  </span>
+                  <i />
                   <div>
-                    <dt>阶段</dt>
-                    <dd>{event.stage}</dd>
+                    <small>
+                      第 {event.attempt} 轮 / {statusCopy[event.status] ?? event.status}
+                    </small>
+                    <strong>{stageCopy[event.stage] ?? event.stage}</strong>
+                    <p>{event.message}</p>
                   </div>
-                  <div>
-                    <dt>来源</dt>
-                    <dd>
-                      {event.stage.startsWith("codex.") ? sourceCopy.sdk : sourceCopy.graph}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Tokens</dt>
-                    <dd>
-                      {event.usage
-                        ? (
-                            event.usage.input_tokens +
-                            event.usage.output_tokens
-                          ).toLocaleString("zh-CN")
-                        : "—"}
-                    </dd>
-                  </div>
-                  {event.usage ? (
-                    <div className="event-token-detail">
-                      <dt>Token 明细</dt>
-                      <dd>{tokenBreakdown(event.usage)}</dd>
+                  <dl>
+                    <div>
+                      <dt>阶段</dt>
+                      <dd>{event.stage}</dd>
                     </div>
-                  ) : null}
-                </dl>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="graph-empty">
-            <span>01</span>
-            <p>启动运行后，LangGraph 的每个状态转换会在这里实时出现。</p>
-          </div>
-        )}
-      </article>
+                    <div>
+                      <dt>来源</dt>
+                      <dd>
+                        {event.stage.startsWith("codex.") ? sourceCopy.sdk : sourceCopy.graph}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Tokens</dt>
+                      <dd>
+                        {event.usage
+                          ? (
+                              event.usage.input_tokens +
+                              event.usage.output_tokens
+                            ).toLocaleString("zh-CN")
+                          : "—"}
+                      </dd>
+                    </div>
+                    {event.usage ? (
+                      <div className="event-token-detail">
+                        <dt>Token 明细</dt>
+                        <dd>{tokenBreakdown(event.usage)}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="graph-empty">
+              <span>01</span>
+              <p>启动运行后，LangGraph 的每个状态转换会在这里实时出现。</p>
+            </div>
+          )}
+        </article>
 
-      <div className="graph-detail-grid">
-        <article className="panel">
-          <div className="panel-heading">
-            <span>故障归因</span>
-            <strong>{snapshot?.attribution?.cause ?? "等待中"}</strong>
-          </div>
-          <h3>{snapshot?.attribution?.taxonomy ?? "等待失败证据"}</h3>
-          {snapshot?.attribution?.agent_source === "llm" &&
-          snapshot.attribution.agent_conclusion ? (
-            <div className="agent-conclusion-card">
-              <div>
-                🤖 AI 归因结论 · DeepSeek
+        <div className="graph-detail-grid">
+          <article className="panel">
+            <div className="panel-heading">
+              <span>故障归因</span>
+              <strong>{snapshot?.attribution?.cause ?? "等待中"}</strong>
+            </div>
+            <h3>{snapshot?.attribution?.taxonomy ?? "等待失败证据"}</h3>
+            {snapshot?.attribution?.agent_source === "llm" &&
+            snapshot.attribution.agent_conclusion ? (
+              <div className="agent-conclusion-card">
+                <div>🤖 AI 归因结论 · DeepSeek</div>
+                <p>{snapshot.attribution.agent_conclusion}</p>
+                {snapshot.attribution.agent_reason ? (
+                  <p className="agent-reason">
+                    归因理由：{snapshot.attribution.agent_reason}
+                  </p>
+                ) : null}
+                {snapshot.attribution.fault_type &&
+                snapshot.attribution.fault_type !== "unknown" ? (
+                  <p className="agent-fault-meta">
+                    故障类型：
+                    {faultTypeCopy[snapshot.attribution.fault_type] ??
+                      snapshot.attribution.fault_type}
+                    {typeof snapshot.attribution.t_star === "number"
+                      ? ` · t* = ${snapshot.attribution.t_star}`
+                      : ""}
+                  </p>
+                ) : null}
               </div>
+            ) : (
               <p>
-                {snapshot.attribution.agent_conclusion}
+                {snapshot?.attribution?.explanation ??
+                  "归因节点会区分 Skill、loader、tool 与 platform 责任。"}
               </p>
-              {snapshot.attribution.agent_reason ? (
-                <p className="agent-reason">
-                  归因理由：{snapshot.attribution.agent_reason}
-                </p>
-              ) : null}
-              {snapshot.attribution.fault_type &&
-              snapshot.attribution.fault_type !== "unknown" ? (
-                <p className="agent-fault-meta">
-                  故障类型：
-                  {faultTypeCopy[snapshot.attribution.fault_type] ??
-                    snapshot.attribution.fault_type}
-                  {typeof snapshot.attribution.t_star === "number"
-                    ? ` · t* = ${snapshot.attribution.t_star}`
-                    : ""}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p>
-              {snapshot?.attribution?.explanation ??
-                "归因节点会区分 Skill、loader、tool 与 platform 责任。"}
-            </p>
-          )}
-          <footer>
-            置信度 {percent(snapshot?.attribution?.confidence)}
-            {snapshot?.attribution?.agent_source
-              ? ` · 来源=${snapshot.attribution.agent_source === "llm" ? "LLM" : "规则"}`
-              : ""}
-          </footer>
-        </article>
+            )}
+            <footer>
+              置信度 {percent(snapshot?.attribution?.confidence)}
+              {snapshot?.attribution?.agent_source
+                ? ` · 来源=${snapshot.attribution.agent_source === "llm" ? "LLM" : "规则"}`
+                : ""}
+            </footer>
+          </article>
 
-        <article className="panel graph-patch-card">
-          <div className="panel-heading">
-            <span>修复补丁</span>
-            <strong>{snapshot?.repair_patch?.kind ?? "等待中"}</strong>
-          </div>
-          {snapshot?.repair_patch ? (
-            <>
-              <p className="graph-diff removed">
-                − {snapshot.repair_patch.before}
-              </p>
-              <p className="graph-diff added">
-                + {snapshot.repair_patch.after}
-              </p>
-              <footer>
-                回滚引用 {snapshot.repair_patch.rollback_ref}
-              </footer>
-            </>
-          ) : (
-            <p>只有高置信度 Skill/loader 责任才会开放写入通道。</p>
-          )}
-        </article>
+          <article className="panel graph-patch-card">
+            <div className="panel-heading">
+              <span>修复补丁</span>
+              <strong>{snapshot?.repair_patch?.kind ?? "等待中"}</strong>
+            </div>
+            {snapshot?.repair_patch ? (
+              <>
+                <p className="graph-diff removed">
+                  − {snapshot.repair_patch.before}
+                </p>
+                <p className="graph-diff added">
+                  + {snapshot.repair_patch.after}
+                </p>
+                <footer>回滚引用 {snapshot.repair_patch.rollback_ref}</footer>
+              </>
+            ) : (
+              <p>只有高置信度 Skill/loader 责任才会开放写入通道。</p>
+            )}
+          </article>
 
-        <article className="panel graph-gate-card">
-          <div className="panel-heading">
-            <span>验证门禁</span>
-            <strong>{snapshot?.verification?.decision ?? "等待中"}</strong>
-          </div>
-          <div className="graph-pass-pair">
-            <div>
-              <span>修复前</span>
-              <strong>
-                {percent(snapshot?.verification?.baseline_pass_rate)}
-              </strong>
+          <article className="panel graph-gate-card">
+            <div className="panel-heading">
+              <span>验证门禁</span>
+              <strong>{snapshot?.verification?.decision ?? "等待中"}</strong>
             </div>
-            <b>→</b>
-            <div>
-              <span>修复后</span>
-              <strong>
-                {percent(snapshot?.verification?.candidate_pass_rate)}
-              </strong>
+            <div className="graph-pass-pair">
+              <div>
+                <span>修复前</span>
+                <strong>
+                  {percent(snapshot?.verification?.baseline_pass_rate)}
+                </strong>
+              </div>
+              <b>→</b>
+              <div>
+                <span>修复后</span>
+                <strong>
+                  {percent(snapshot?.verification?.candidate_pass_rate)}
+                </strong>
+              </div>
             </div>
-          </div>
-          <footer>{snapshot?.stop_reason || "等待回归门禁"}</footer>
-        </article>
+            <footer>{snapshot?.stop_reason || "等待回归门禁"}</footer>
+          </article>
+        </div>
       </div>
     </section>
   );
