@@ -1232,14 +1232,146 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font: 11px/1.4 var(--mono);
 }
 
+.case-gallery-view,
 .evaluation-view,
 .architecture-view {
   display: grid;
   gap: 18px;
   margin-top: 28px;
 }
+.case-gallery-intro h2,
 .evaluation-intro h2,
 .architecture-intro h2 { max-width: 840px; }
+.case-gallery-summary {
+  max-width: 360px;
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--ink);
+  border-radius: 16px;
+  background: rgba(255,253,246,.72);
+}
+.case-gallery-summary span,
+.case-study-topline span,
+.case-study-topline b,
+.case-study-card dt,
+.case-study-metrics span {
+  color: var(--muted);
+  font: 800 10px/1.2 var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.case-gallery-summary strong {
+  font: 760 22px/1 var(--mono);
+}
+.case-gallery-summary small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.case-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.case-study-card {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 20px;
+}
+.case-study-card.selected {
+  border-color: rgba(71,116,88,.55);
+  box-shadow: 0 22px 70px rgba(71,116,88,.14);
+}
+.case-study-topline {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.case-study-topline strong {
+  justify-self: start;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: #355143;
+  font: 800 10px/1 var(--mono);
+}
+.case-study-topline b { color: #477458; }
+.case-study-card h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: -.035em;
+}
+.case-study-card p,
+.case-study-card dd,
+.case-study-card li {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.case-study-card p,
+.case-study-card dl,
+.case-study-card ul,
+.case-study-card dd { margin: 0; }
+.case-study-card dl {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(232,228,216,.36);
+}
+.case-study-card dt { margin-bottom: 4px; }
+.case-study-card code {
+  color: #355143;
+  font: 700 11px/1.35 var(--mono);
+  white-space: normal;
+}
+.case-study-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+.case-study-metrics div {
+  min-width: 0;
+  padding: 12px;
+}
+.case-study-metrics div + div { border-left: 1px solid var(--line); }
+.case-study-metrics strong {
+  display: block;
+  margin-top: 7px;
+  font: 760 18px/1 var(--mono);
+  letter-spacing: -.035em;
+}
+.case-study-card ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.case-study-card li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 6px;
+}
+.case-study-card li span { color: #477458; font-weight: 900; }
+.case-study-card button {
+  justify-self: start;
+  padding: 11px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.case-study-card button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(18,32,25,.16);
+}
 .evaluation-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2566,6 +2698,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .diagnosis-grid, .patch-grid, .route-grid { grid-template-columns: 1fr; }
   .benchmark-kpis,
   .evaluation-kpis { grid-template-columns: 1fr 1fr; }
+  .case-gallery-grid { grid-template-columns: 1fr 1fr; }
   .evaluation-grid,
   .architecture-principles { grid-template-columns: 1fr; }
   .diagnostics-kpis,
@@ -2651,6 +2784,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .diff-panel footer { flex-direction: column; }
   .benchmark-kpis,
   .evaluation-kpis { grid-template-columns: 1fr; }
+  .case-gallery-grid,
+  .case-study-metrics { grid-template-columns: 1fr; }
+  .case-study-metrics div + div {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
   .evaluation-grid,
   .architecture-principles { grid-template-columns: 1fr; }
   .architecture-flow { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: minmax(220px, 78vw); }

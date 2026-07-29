@@ -35,6 +35,7 @@ import { useRunStore } from "./RunStore";
 
 type View =
   | "overview"
+  | "cases"
   | "trace"
   | "usage"
   | "diagnosis"
@@ -47,15 +48,16 @@ type View =
 
 const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "overview", label: "运行概览", eyebrow: "00" },
-  { id: "trace", label: "Trace 过程", eyebrow: "01" },
-  { id: "usage", label: "Token 面板", eyebrow: "02" },
-  { id: "diagnosis", label: "故障归因", eyebrow: "03" },
-  { id: "patch", label: "修复验证", eyebrow: "04" },
-  { id: "benchmark", label: "配对评测", eyebrow: "05" },
-  { id: "evaluation", label: "评测指标", eyebrow: "06" },
-  { id: "architecture", label: "Agent 架构", eyebrow: "07" },
-  { id: "diagnostics", label: "诊断报告", eyebrow: "08" },
-  { id: "orchestrator", label: "自愈链路", eyebrow: "09" },
+  { id: "cases", label: "案例库", eyebrow: "01" },
+  { id: "trace", label: "Trace 过程", eyebrow: "02" },
+  { id: "usage", label: "Token 面板", eyebrow: "03" },
+  { id: "diagnosis", label: "故障归因", eyebrow: "04" },
+  { id: "patch", label: "修复验证", eyebrow: "05" },
+  { id: "benchmark", label: "配对评测", eyebrow: "06" },
+  { id: "evaluation", label: "评测指标", eyebrow: "07" },
+  { id: "architecture", label: "Agent 架构", eyebrow: "08" },
+  { id: "diagnostics", label: "诊断报告", eyebrow: "09" },
+  { id: "orchestrator", label: "自愈链路", eyebrow: "10" },
 ];
 
 const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
@@ -449,6 +451,130 @@ function EvaluationDashboard({
             </div>
           ))}
         </article>
+      </div>
+    </section>
+  );
+}
+
+type CaseStudyResult = ReturnType<typeof analyzeCase>;
+
+function repairLabel(result: CaseStudyResult) {
+  if (result.repair.kind === "skill_patch") {
+    return `${result.repair.targetSkill}@${result.repair.nextVersion}`;
+  }
+  if (result.repair.kind === "routing_action") {
+    return `${result.repair.target} route / ${result.repair.mutationPolicy}`;
+  }
+  return `${result.repair.target} review / ${result.repair.mutationPolicy}`;
+}
+
+function CaseStudyGallery({
+  studies,
+  selectedCaseId,
+  onOpenCase,
+}: {
+  studies: CaseStudyResult[];
+  selectedCaseId: string;
+  onOpenCase: (caseId: string) => void;
+}) {
+  const adopted = studies.filter(
+    (item) => item.validation.decision === "ADOPT",
+  ).length;
+  const safelyRouted = studies.filter(
+    (item) => item.validation.decision === "ROUTE",
+  ).length;
+  const taxonomies = new Set(studies.map((item) => item.diagnosis.taxonomy));
+
+  return (
+    <section className="case-gallery-view">
+      <div className="section-intro case-gallery-intro">
+        <div>
+          <span className="kicker">Case Study Gallery / 失败模式样本库</span>
+          <h2>
+            把分散的失败 Trace 沉淀成
+            <em>可讲解、可对比、可复现</em> 的案例资产。
+          </h2>
+        </div>
+        <div className="case-gallery-summary">
+          <span>Gallery Scope</span>
+          <strong>{studies.length} cases</strong>
+          <small>
+            {taxonomies.size} 类故障 · {adopted} 个自动采纳 · {safelyRouted} 个安全路由
+          </small>
+        </div>
+      </div>
+
+      <div className="case-gallery-grid">
+        {studies.map((study, index) => {
+          const isSelected = study.input.id === selectedCaseId;
+          const faultStep = study.input.trace.find(
+            (step) => step.status === "fault",
+          );
+          const passDelta =
+            study.validation.originalReplay.after -
+            study.validation.originalReplay.before;
+
+          return (
+            <article
+              className={`panel case-study-card ${isSelected ? "selected" : ""}`}
+              key={study.input.id}
+            >
+              <div className="case-study-topline">
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{study.diagnosis.taxonomy}</strong>
+                <b>{study.validation.decision}</b>
+              </div>
+
+              <h3>{study.input.name}</h3>
+              <p>{study.input.summary}</p>
+
+              <dl>
+                <div>
+                  <dt>Root Cause</dt>
+                  <dd>{study.diagnosis.mechanism}</dd>
+                </div>
+                <div>
+                  <dt>Fault Evidence</dt>
+                  <dd>
+                    <code>{faultStep?.evidence ?? study.diagnosis.primaryFaultStep}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Repair Plan</dt>
+                  <dd>{repairLabel(study)}</dd>
+                </div>
+              </dl>
+
+              <div className="case-study-metrics">
+                <div>
+                  <span>Replay Δ</span>
+                  <strong>{signedPercent(passDelta)}</strong>
+                </div>
+                <div>
+                  <span>Regression</span>
+                  <strong>{plainPercent(study.validation.regression.after)}</strong>
+                </div>
+                <div>
+                  <span>Tokens</span>
+                  <strong>{formatTokens(study.usage.totalTokens)}</strong>
+                </div>
+              </div>
+
+              <ul>
+                {study.validation.reasons.slice(0, 3).map((reason) => (
+                  <li key={reason}>
+                    <span>✓</span>
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+
+              <button type="button" onClick={() => onOpenCase(study.input.id)}>
+                打开完整 Trace →
+              </button>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -1165,6 +1291,10 @@ export default function DemoApp() {
     () => [...demoCases, ...importedCases],
     [importedCases],
   );
+  const caseStudies = useMemo(
+    () => availableCases.map((item) => analyzeCase(item)),
+    [availableCases],
+  );
   const selectedCase =
     availableCases.find((item) => item.id === selectedCaseId) ?? demoCases[0];
   const sampleResult = useMemo(
@@ -1238,6 +1368,12 @@ export default function DemoApp() {
     clearRun();
     setSelectedCaseId(caseId);
     setView("overview");
+  };
+
+  const openCaseStudy = (caseId: string) => {
+    clearRun();
+    setSelectedCaseId(caseId);
+    setView("trace");
   };
 
   const importTrace = async (
@@ -1437,6 +1573,7 @@ export default function DemoApp() {
         )}
 
         {view !== "benchmark" &&
+          view !== "cases" &&
           view !== "evaluation" &&
           view !== "architecture" &&
           view !== "diagnostics" &&
@@ -1601,6 +1738,14 @@ export default function DemoApp() {
               </div>
             </article>
           </section>
+        )}
+
+        {view === "cases" && (
+          <CaseStudyGallery
+            studies={caseStudies}
+            selectedCaseId={activeCase.id}
+            onOpenCase={openCaseStudy}
+          />
         )}
 
         {view === "trace" && (
