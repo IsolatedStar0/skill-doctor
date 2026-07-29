@@ -49,15 +49,18 @@ type View =
 const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "overview", label: "项目总览", eyebrow: "00" },
   { id: "cases", label: "案例库", eyebrow: "01" },
-  { id: "trace", label: "Trace 证据", eyebrow: "02" },
-  { id: "diagnosis", label: "故障归因", eyebrow: "03" },
-  { id: "patch", label: "修复验证", eyebrow: "04" },
-  { id: "evaluation", label: "评测结果", eyebrow: "05" },
-  { id: "architecture", label: "系统架构", eyebrow: "06" },
-  { id: "orchestrator", label: "实时链路", eyebrow: "07" },
+  { id: "trace", label: "单案例分析", eyebrow: "02" },
+  { id: "evaluation", label: "评测结果", eyebrow: "03" },
+  { id: "architecture", label: "系统架构", eyebrow: "04" },
+  { id: "orchestrator", label: "实时链路", eyebrow: "05" },
 ];
 
-const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
+const detailViews: { id: View; label: string; detail: string }[] = [
+  { id: "trace", label: "1. Trace 证据", detail: "先看失败发生在哪里" },
+  { id: "diagnosis", label: "2. 故障归因", detail: "再看为什么是这个分类" },
+  { id: "patch", label: "3. 修复验证", detail: "最后看是否应该采纳" },
+];
+
 const benchmarkReport =
   benchmarkReportJson as unknown as PairedBenchmarkReport;
 const evaluationSummary =
@@ -455,6 +458,27 @@ function EvaluationDashboard({
 
 type CaseStudyResult = ReturnType<typeof analyzeCase>;
 
+const caseStudyNarratives: Record<
+  string,
+  { title: string; value: string; action: string }
+> = {
+  "Content Gap": {
+    title: "内容缺口：Skill 写得不够完整",
+    value: "展示系统如何把失败归因到 Skill procedure，并生成最小 scoped patch。",
+    action: "自动修复",
+  },
+  "Loading Miss": {
+    title: "加载遗漏：Skill 对但上下文没加载全",
+    value: "展示系统如何避免误改 Skill，把问题路由到 loader / manifest 层。",
+    action: "安全路由",
+  },
+  "Non-Skill Cause": {
+    title: "平台异常：不是 Skill 的锅",
+    value: "展示系统如何识别权限/服务故障，拒绝生成无意义 Skill diff。",
+    action: "拒绝改 Skill",
+  },
+};
+
 function repairLabel(result: CaseStudyResult) {
   if (result.repair.kind === "skill_patch") {
     return `${result.repair.targetSkill}@${result.repair.nextVersion}`;
@@ -504,6 +528,11 @@ function CaseStudyGallery({
       <div className="case-gallery-grid">
         {studies.map((study, index) => {
           const isSelected = study.input.id === selectedCaseId;
+          const narrative = caseStudyNarratives[study.diagnosis.taxonomy] ?? {
+            title: study.input.name,
+            value: study.input.summary,
+            action: study.validation.decision,
+          };
           const faultStep = study.input.trace.find(
             (step) => step.status === "fault",
           );
@@ -519,11 +548,11 @@ function CaseStudyGallery({
               <div className="case-study-topline">
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <strong>{study.diagnosis.taxonomy}</strong>
-                <b>{study.validation.decision}</b>
+                <b>{narrative.action}</b>
               </div>
 
-              <h3>{study.input.name}</h3>
-              <p>{study.input.summary}</p>
+              <h3>{narrative.title}</h3>
+              <p>{narrative.value}</p>
 
               <dl>
                 <div>
@@ -566,8 +595,12 @@ function CaseStudyGallery({
                 ))}
               </ul>
 
-              <button type="button" onClick={() => onOpenCase(study.input.id)}>
-                打开完整 Trace →
+              <button
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => onOpenCase(study.input.id)}
+              >
+                选择并查看 Trace →
               </button>
             </article>
           );
@@ -1303,22 +1336,6 @@ export default function DemoApp() {
     [snapshot, sampleResult],
   );
   const activeCase = result.input;
-  const completedStages = snapshot
-    ? new Set(snapshot.events.map((event) => event.stage))
-    : null;
-  const stage = !completedStages
-    ? 4
-    : completedStages.has("verify") ||
-        completedStages.has("promote") ||
-        completedStages.has("finalize")
-      ? 4
-      : completedStages.has("repair")
-        ? 3
-        : completedStages.has("attribute")
-          ? 2
-          : completedStages.has("collect_evidence")
-            ? 1
-            : 0;
   const isSkillPatch = result.repair.kind === "skill_patch";
   const changedLineCount =
     result.repair.kind === "skill_patch"
@@ -1348,35 +1365,38 @@ export default function DemoApp() {
     1,
   );
 
+  const goToView = (nextView: View) => {
+    setView(nextView);
+  };
+
   const rerun = () => {
-    setView("orchestrator");
+    goToView("orchestrator");
   };
 
   const openRun = async (run: RunSummary) => {
     await selectRun(run.run_id, run.run_kind);
-    setView(run.run_kind === "benchmark" ? "benchmark" : "overview");
+    goToView(run.run_kind === "benchmark" ? "evaluation" : "trace");
   };
 
   const openChildRun = async (runId: string) => {
     await selectRun(runId, "agent");
-    setView("overview");
+    goToView("trace");
   };
 
   const openParentBenchmark = async (runId: string) => {
     await selectRun(runId, "benchmark");
-    setView("benchmark");
+    goToView("evaluation");
   };
 
-  const selectCase = (caseId: string) => {
+  const selectCaseForCurrentDetail = (caseId: string) => {
     clearRun();
     setSelectedCaseId(caseId);
-    setView("overview");
   };
 
-  const openCaseStudy = (caseId: string) => {
+  const openCaseTrace = (caseId: string) => {
     clearRun();
     setSelectedCaseId(caseId);
-    setView("trace");
+    goToView("trace");
   };
 
   const importTrace = async (
@@ -1398,7 +1418,7 @@ export default function DemoApp() {
       ]);
       clearRun();
       setSelectedCaseId(imported.id);
-      setView("trace");
+      goToView("trace");
       setImportState({
         kind: "success",
         message: `已导入 ${file.name}：${imported.trace.length} steps，${formatTokens(
@@ -1434,7 +1454,7 @@ export default function DemoApp() {
               type="button"
               key={item.id}
               className={view === item.id ? "active" : ""}
-              onClick={() => setView(item.id)}
+              onClick={() => goToView(item.id)}
               data-testid={`nav-${item.id}`}
             >
               <span>{item.eyebrow}</span>
@@ -1563,7 +1583,7 @@ export default function DemoApp() {
                   在 LangSmith 查看 →
                 </a>
               ) : (
-                <button type="button" onClick={() => setView("orchestrator")}>
+                <button type="button" onClick={() => goToView("orchestrator")}>
                   {snapshot ? "查看实时链路 →" : "启动 Agent Run →"}
                 </button>
               )}
@@ -1574,42 +1594,37 @@ export default function DemoApp() {
         {showsCaseControls && (
           <>
             <section
-              className="scenario-switcher"
+              className="case-tabs"
               aria-label="Failure scenarios"
             >
+              <span>当前案例</span>
               {availableCases.map((item, index) => (
                 <button
                   type="button"
                   key={item.id}
                   className={item.id === activeCase.id ? "active" : ""}
-                  onClick={() => selectCase(item.id)}
+                  onClick={() => selectCaseForCurrentDetail(item.id)}
                   data-testid={`case-${item.id}`}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   <strong>{item.name}</strong>
-                  <small>{item.summary}</small>
                 </button>
               ))}
             </section>
 
-            <div className="stage-strip" aria-label="Pipeline progress">
-              {stageLabels.map((label, index) => (
-                <div
-                  key={label}
-                  className={
-                    stage > index
-                      ? "complete"
-                      : stage === index
-                        ? "running"
-                        : ""
-                  }
+            <nav className="detail-step-nav" aria-label="单案例分析步骤">
+              {detailViews.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={view === item.id ? "active" : ""}
+                  onClick={() => goToView(item.id)}
                 >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{label}</strong>
-                  <i />
-                </div>
+                  <strong>{item.label}</strong>
+                  <span>{item.detail}</span>
+                </button>
               ))}
-            </div>
+            </nav>
           </>
         )}
 
@@ -1655,13 +1670,13 @@ export default function DemoApp() {
                 </div>
               </dl>
               <div className="overview-actions" aria-label="推荐讲解路径">
-                <button type="button" onClick={() => setView("cases")}>
+                <button type="button" onClick={() => goToView("cases")}>
                   浏览案例库
                 </button>
-                <button type="button" onClick={() => setView("trace")}>
-                  查看证据链
+                <button type="button" onClick={() => goToView("trace")}>
+                  进入单案例分析
                 </button>
-                <button type="button" onClick={() => setView("evaluation")}>
+                <button type="button" onClick={() => goToView("evaluation")}>
                   看量化结果
                 </button>
               </div>
@@ -1749,7 +1764,7 @@ export default function DemoApp() {
           <CaseStudyGallery
             studies={caseStudies}
             selectedCaseId={activeCase.id}
-            onOpenCase={openCaseStudy}
+            onOpenCase={openCaseTrace}
           />
         )}
 
