@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: skill-doctor-api
+    runtime: python
+    plan: free
+    buildCommand: python -m pip install --upgrade pip && python -m pip install -e "backend[api]"
+    startCommand: python -m uvicorn backend.skilldoctor.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: LANGSMITH_TRACING
+        value: "false"
+      - key: SKILL_DOCTOR_CORS_ORIGINS
+        value: https://isolatedstar0.github.io,http://localhost:3000,http://localhost:5173,http://localhost:8010
+      - key: SKILL_DOCTOR_STORAGE_BACKEND
+        value: file

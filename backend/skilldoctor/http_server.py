@@ -35,6 +35,10 @@ def _default_host() -> str:
     return os.getenv("SKILL_DOCTOR_HOST", "0.0.0.0")
 
 
+def _default_port() -> int:
+    return int(os.getenv("PORT", "8010"))
+
+
 def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
     allowed_origins = _allowed_origins()
     benchmarks = BenchmarkService(service)
@@ -367,7 +371,7 @@ def parser() -> argparse.ArgumentParser:
         description="Run the dependency-free Skill Doctor HTTP control plane."
     )
     command.add_argument("--host", default=_default_host())
-    command.add_argument("--port", default=8010, type=int)
+    command.add_argument("--port", default=_default_port(), type=int)
     return command
 
 

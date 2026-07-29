@@ -28,6 +28,14 @@ def test_dependency_free_server_host_can_be_configured(monkeypatch) -> None:
     assert args.host == "127.0.0.1"
 
 
+def test_dependency_free_server_port_can_use_cloud_env(monkeypatch) -> None:
+    monkeypatch.setenv("PORT", "9876")
+
+    args = parser().parse_args([])
+
+    assert args.port == 9876
+
+
 def test_dependency_free_server_returns_scenario_catalog() -> None:
     service = RunService(PROJECT_ROOT)
     server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
