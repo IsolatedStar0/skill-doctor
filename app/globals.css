@@ -410,7 +410,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-weight: 800;
   cursor: pointer;
 }
-.overview-actions button:first-child {
+.overview-actions button.active {
   background: var(--ink);
   color: var(--paper);
 }

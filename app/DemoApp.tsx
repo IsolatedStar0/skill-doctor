@@ -55,6 +55,12 @@ const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "orchestrator", label: "实时链路", eyebrow: "05" },
 ];
 
+const overviewActions: { id: View; label: string }[] = [
+  { id: "cases", label: "浏览案例库" },
+  { id: "trace", label: "进入单案例分析" },
+  { id: "evaluation", label: "看量化结果" },
+];
+
 const detailViews: { id: View; label: string; detail: string }[] = [
   { id: "trace", label: "1. Trace 证据", detail: "先看失败发生在哪里" },
   { id: "diagnosis", label: "2. 故障归因", detail: "再看为什么是这个分类" },
@@ -1459,6 +1465,7 @@ export default function DemoApp() {
               type="button"
               key={item.id}
               className={activePrimaryView === item.id ? "active" : ""}
+              aria-current={activePrimaryView === item.id ? "page" : undefined}
               onClick={() => goToView(item.id)}
               data-testid={`nav-${item.id}`}
             >
@@ -1623,6 +1630,7 @@ export default function DemoApp() {
                   type="button"
                   key={item.id}
                   className={view === item.id ? "active" : ""}
+                  aria-current={view === item.id ? "step" : undefined}
                   onClick={() => goToView(item.id)}
                 >
                   <strong>{item.label}</strong>
@@ -1675,15 +1683,21 @@ export default function DemoApp() {
                 </div>
               </dl>
               <div className="overview-actions" aria-label="推荐讲解路径">
-                <button type="button" onClick={() => goToView("cases")}>
-                  浏览案例库
-                </button>
-                <button type="button" onClick={() => goToView("trace")}>
-                  进入单案例分析
-                </button>
-                <button type="button" onClick={() => goToView("evaluation")}>
-                  看量化结果
-                </button>
+                {overviewActions.map((item) => {
+                  const isActive = activePrimaryView === item.id;
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={isActive ? "active" : ""}
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => goToView(item.id)}
+                      data-testid={`overview-action-${item.id}`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
               </div>
             </article>
 
@@ -1768,7 +1782,7 @@ export default function DemoApp() {
         {view === "cases" && (
           <CaseStudyGallery
             studies={caseStudies}
-            selectedCaseId={activeCase.id}
+            selectedCaseId={selectedCaseId}
             onOpenCase={openCaseTrace}
           />
         )}
