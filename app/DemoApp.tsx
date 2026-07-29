@@ -47,17 +47,14 @@ type View =
   | "orchestrator";
 
 const views: { id: View; label: string; eyebrow: string }[] = [
-  { id: "overview", label: "运行概览", eyebrow: "00" },
+  { id: "overview", label: "项目总览", eyebrow: "00" },
   { id: "cases", label: "案例库", eyebrow: "01" },
-  { id: "trace", label: "Trace 过程", eyebrow: "02" },
-  { id: "usage", label: "Token 面板", eyebrow: "03" },
-  { id: "diagnosis", label: "故障归因", eyebrow: "04" },
-  { id: "patch", label: "修复验证", eyebrow: "05" },
-  { id: "benchmark", label: "配对评测", eyebrow: "06" },
-  { id: "evaluation", label: "评测指标", eyebrow: "07" },
-  { id: "architecture", label: "Agent 架构", eyebrow: "08" },
-  { id: "diagnostics", label: "诊断报告", eyebrow: "09" },
-  { id: "orchestrator", label: "自愈链路", eyebrow: "10" },
+  { id: "trace", label: "Trace 证据", eyebrow: "02" },
+  { id: "diagnosis", label: "故障归因", eyebrow: "03" },
+  { id: "patch", label: "修复验证", eyebrow: "04" },
+  { id: "evaluation", label: "评测结果", eyebrow: "05" },
+  { id: "architecture", label: "系统架构", eyebrow: "06" },
+  { id: "orchestrator", label: "实时链路", eyebrow: "07" },
 ];
 
 const stageLabels = ["冻结证据", "定位故障", "规划修复", "回放验证"];
@@ -1340,6 +1337,12 @@ export default function DemoApp() {
     result.repair.kind === "skill_patch"
       ? Math.max(result.repair.before.length, result.repair.after.length)
       : 0;
+  const showsRunContext = ["trace", "usage", "diagnosis", "patch"].includes(
+    view,
+  );
+  const showsCaseControls = ["trace", "usage", "diagnosis", "patch"].includes(
+    view,
+  );
   const maxStepTokens = Math.max(
     ...activeCase.trace.map(stepTokenTotal),
     1,
@@ -1474,20 +1477,20 @@ export default function DemoApp() {
           </div>
         </header>
 
-        <section className="run-registry panel" aria-label="Agent runs">
-          <div className="run-registry-heading">
-            <div>
-              <span>Run 注册中心 / SSE</span>
-              <strong>后端运行中心</strong>
+        {(runs.length > 0 || snapshot || benchmarkSnapshot) && (
+          <section className="run-registry panel" aria-label="Agent runs">
+            <div className="run-registry-heading">
+              <div>
+                <span>Run 注册中心 / SSE</span>
+                <strong>后端运行中心</strong>
+              </div>
+              <small className={registryStatus}>
+                <i />
+                {registryStatus}
+              </small>
             </div>
-            <small className={registryStatus}>
-              <i />
-              {registryStatus}
-            </small>
-          </div>
-          <div className="run-registry-list">
-            {runs.length ? (
-              runs.slice(0, 8).map((run) => (
+            <div className="run-registry-list">
+              {runs.slice(0, 8).map((run) => (
                 <button
                   type="button"
                   key={run.run_id}
@@ -1508,14 +1511,10 @@ export default function DemoApp() {
                     {run.executor} · {run.event_count} 个事件
                   </small>
                 </button>
-              ))
-            ) : (
-              <p>
-                等待后端 Run；CLI、API 或当前页面启动的运行都会自动出现在这里。
-              </p>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        )}
 
         {importState && (
           <div
@@ -1527,7 +1526,7 @@ export default function DemoApp() {
           </div>
         )}
 
-        {view !== "orchestrator" && (
+        {showsRunContext && (
           <div className={`run-provenance ${snapshot ? "live" : "sample"}`}>
             <div>
               <span>{snapshot ? "实时运行来源" : "预运行示例"}</span>
@@ -1572,12 +1571,7 @@ export default function DemoApp() {
           </div>
         )}
 
-        {view !== "benchmark" &&
-          view !== "cases" &&
-          view !== "evaluation" &&
-          view !== "architecture" &&
-          view !== "diagnostics" &&
-          view !== "orchestrator" && (
+        {showsCaseControls && (
           <>
             <section
               className="scenario-switcher"
@@ -1660,6 +1654,17 @@ export default function DemoApp() {
                   </dd>
                 </div>
               </dl>
+              <div className="overview-actions" aria-label="推荐讲解路径">
+                <button type="button" onClick={() => setView("cases")}>
+                  浏览案例库
+                </button>
+                <button type="button" onClick={() => setView("trace")}>
+                  查看证据链
+                </button>
+                <button type="button" onClick={() => setView("evaluation")}>
+                  看量化结果
+                </button>
+              </div>
             </article>
 
             <article className="decision-panel panel">

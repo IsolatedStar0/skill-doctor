@@ -416,6 +416,32 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   margin: 0;
   font: 12px/1.5 var(--mono);
 }
+.overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.overview-actions button {
+  padding: 11px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.overview-actions button:first-child {
+  background: var(--ink);
+  color: var(--paper);
+}
+.overview-actions button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(18,32,25,.12);
+}
 .adopt-chip {
   padding: 5px 8px;
   color: var(--ink) !important;
