@@ -166,8 +166,10 @@ export default function LangGraphDashboard() {
   const apiUrl =
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
     "http://localhost:8010";
-  const streamUrl = `${apiUrl.replace(/\/$/, "")}/runs/stream`;
-  const healthUrl = `${apiUrl.replace(/\/$/, "")}/health`;
+  const apiBaseUrl = apiUrl.replace(/\/$/, "");
+  const streamUrl = `${apiBaseUrl}/runs/stream`;
+  const healthUrl = `${apiBaseUrl}/health`;
+  const scenariosUrl = `${apiBaseUrl}/scenarios`;
   const selectedScenario =
     scenarioCatalog.find((item) => item.id === scenario) ?? scenarioCatalog[0];
 
@@ -448,24 +450,25 @@ export default function LangGraphDashboard() {
             </div>
           </dl>
           <div className="graph-api">
-            <span>流式接口</span>
+            <span>API 基地址</span>
             <a
               className="graph-api-url"
-              href={streamUrl}
+              href={apiBaseUrl}
               target="_blank"
               rel="noreferrer"
-              title={streamUrl}
+              title={apiBaseUrl}
             >
-              {streamUrl}
+              {apiBaseUrl}
             </a>
-            <a
-              className="graph-api-health"
-              href={healthUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              打开健康检查 ↗
-            </a>
+            <div className="graph-api-links" aria-label="API 快速检查链接">
+              <a href={healthUrl} target="_blank" rel="noreferrer">
+                健康检查 ↗
+              </a>
+              <a href={scenariosUrl} target="_blank" rel="noreferrer">
+                场景列表 ↗
+              </a>
+            </div>
+            <small title={streamUrl}>POST 流式端点：{streamUrl}</small>
             {snapshot?.observability?.trace_url ? (
               <a
                 href={snapshot.observability.trace_url}

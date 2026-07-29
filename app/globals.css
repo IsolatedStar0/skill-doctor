@@ -1723,6 +1723,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-color: var(--ink);
   background: rgba(201,255,98,.22);
 }
+.graph-api-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.graph-api-links a {
+  width: auto !important;
+  padding: 7px 9px;
+  color: var(--ink) !important;
+  background: rgba(201,255,98,.22);
+  border: 1px solid rgba(18,32,25,.24) !important;
+  border-radius: 999px;
+  font: 800 10px/1.2 var(--mono) !important;
+  letter-spacing: .06em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.graph-api-links a:hover {
+  background: var(--acid);
+}
 .graph-run {
   display: flex;
   gap: 16px;
