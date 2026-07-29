@@ -236,8 +236,8 @@ def push_to_skill_doctor(
     model_messages:
         List of ``{role, content, ...}`` dicts (assistant/user/system/tool).
     business_result:
-        Optional final skill output — attached under ``trace_metadata`` for
-        downstream inspection.
+        Optional final skill output — sent as top-level ``business_result`` so
+        the backend can surface it directly in the run snapshot/UI.
     task:
         The user query that triggered the skill.
     skill_version, trace_metadata:
@@ -274,11 +274,15 @@ def push_to_skill_doctor(
         if skill_content is None:
             skill_content = get_skill_content(skill_id)
 
-        merged_metadata: dict[str, Any] = {}
+        merged_metadata: dict[str, Any] = {
+            "source": "aime_on_finish_hook",
+            "skill_runtime": "aime",
+        }
         if trace_metadata:
-            merged_metadata.update(dict(trace_metadata))
-        if business_result is not None and "business_result" not in merged_metadata:
-            merged_metadata["business_result"] = business_result
+            explicit_metadata = dict(trace_metadata)
+            merged_metadata.update(explicit_metadata)
+            merged_metadata.setdefault("source", "aime_on_finish_hook")
+            merged_metadata.setdefault("skill_runtime", "aime")
 
         payload: dict[str, Any] = {
             "skill_id": skill_id,
@@ -292,6 +296,8 @@ def push_to_skill_doctor(
             payload["skill_content"] = skill_content
         if skill_version:
             payload["skill_version"] = skill_version
+        if business_result is not None:
+            payload["business_result"] = business_result
         if merged_metadata:
             payload["trace_metadata"] = merged_metadata
 
