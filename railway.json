@@ -1,8 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "python -m pip install --upgrade pip && python -m pip install -e \"backend[api]\""
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
   },
   "deploy": {
     "startCommand": "python -m uvicorn backend.skilldoctor.api:app --host 0.0.0.0 --port $PORT",
