@@ -18,4 +18,4 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 EXPOSE 8010
 
-CMD ["sh", "-c", "exec python -m uvicorn backend.skilldoctor.api:app --host 0.0.0.0 --port ${PORT:-8010}"]
+CMD ["python", "-m", "backend.skilldoctor.start"]
