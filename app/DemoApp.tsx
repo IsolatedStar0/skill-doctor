@@ -1364,6 +1364,11 @@ export default function DemoApp() {
     ...activeCase.trace.map(stepTokenTotal),
     1,
   );
+  const activePrimaryView = ["trace", "usage", "diagnosis", "patch"].includes(
+    view,
+  )
+    ? "trace"
+    : view;
 
   const goToView = (nextView: View) => {
     setView(nextView);
@@ -1453,7 +1458,7 @@ export default function DemoApp() {
             <button
               type="button"
               key={item.id}
-              className={view === item.id ? "active" : ""}
+              className={activePrimaryView === item.id ? "active" : ""}
               onClick={() => goToView(item.id)}
               data-testid={`nav-${item.id}`}
             >
