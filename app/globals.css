@@ -1688,20 +1688,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.graph-api { min-width: 0; display: grid; gap: 7px; }
+.graph-api { min-width: 0; display: grid; gap: 8px; }
 .graph-api span {
   color: var(--muted);
   font: 700 10px/1 var(--mono);
   letter-spacing: .08em;
 }
-.graph-api code {
-  overflow: hidden;
+.graph-api-url {
+  display: block;
+  max-width: 100%;
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
   color: var(--ink);
-  font: 11px/1.35 var(--mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: rgba(255,253,246,.72);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: 11px/1.45 var(--mono);
+  text-decoration: none;
 }
-.graph-api a,
+.graph-api a:not(.graph-api-url),
 .graph-api small {
   width: fit-content;
   color: var(--muted);
@@ -1710,9 +1715,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   text-decoration: none;
   text-transform: uppercase;
 }
-.graph-api a {
+.graph-api a:not(.graph-api-url) {
   color: var(--ink);
   border-bottom: 1px solid var(--ink);
+}
+.graph-api-url:hover {
+  border-color: var(--ink);
+  background: rgba(201,255,98,.22);
 }
 .graph-run {
   display: flex;

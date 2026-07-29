@@ -166,6 +166,8 @@ export default function LangGraphDashboard() {
   const apiUrl =
     process.env.NEXT_PUBLIC_SKILL_DOCTOR_API_URL ??
     "http://localhost:8010";
+  const streamUrl = `${apiUrl.replace(/\/$/, "")}/runs/stream`;
+  const healthUrl = `${apiUrl.replace(/\/$/, "")}/health`;
   const selectedScenario =
     scenarioCatalog.find((item) => item.id === scenario) ?? scenarioCatalog[0];
 
@@ -447,7 +449,23 @@ export default function LangGraphDashboard() {
           </dl>
           <div className="graph-api">
             <span>流式接口</span>
-            <code>{apiUrl}/runs/stream</code>
+            <a
+              className="graph-api-url"
+              href={streamUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={streamUrl}
+            >
+              {streamUrl}
+            </a>
+            <a
+              className="graph-api-health"
+              href={healthUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              打开健康检查 ↗
+            </a>
             {snapshot?.observability?.trace_url ? (
               <a
                 href={snapshot.observability.trace_url}
