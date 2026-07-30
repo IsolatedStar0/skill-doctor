@@ -1,0 +1,215 @@
+{
+  "case_id": "puck-rule-rca-real-005",
+  "name": "真实 Aime Trace：puck-rule-rca / fail",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-2b78755db7f7，business_verdict=fail，doctor_status=passed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=13020960 puck_task_id=185310 psm=ad.creative.material_manage rule=服务接口系统错误码QPS",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "condition": "standard",
+    "parent_run_id": "lg-2b78755db7f7",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 4 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 4 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 2 model message(s); assistant=1, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 4 runtime event(s), 4 tool call(s) and 2 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "load_skill",
+          "status": "completed",
+          "message": "puck-rule-rca 与 metrics_20 skill 已加载",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "fetch_rule_metric_info",
+          "status": "completed",
+          "message": "OpenAPI 返回 datasource_type=metrics, vregion=China-North, group_detail_name=1701.MapiVideoUpload.all_dc",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "query_timeseries",
+          "status": "completed",
+          "message": "metrics_api_query 拉取 today/day-1/day-2 三窗口，target 序列全部命中",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "trend_judge",
+          "status": "completed",
+          "message": "today 出现新增突刺群，历史窗口近零，判 is_regular=true, filter=false",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=4, tool_calls=4, model_messages=2, trace_metadata_keys=6.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 4 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 4,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 4 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 4,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 2 model message(s) (assistant=1, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 2,
+            "assistant": 1,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 6 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 4 runtime event(s), 4 tool call(s) and 2 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "business_result": {
+      "verdict": "存在真实异常，不建议降噪",
+      "verdict_type": "fail",
+      "confidence": 0.9,
+      "details": [
+        {
+          "name": "1701.MapiVideoUpload.all_dc",
+          "status": "fail",
+          "reason": "today 出现新增突刺群（峰值 5.16 QPS，持续约 12 分钟），day-1/day-2 同一时段近零，判定为真实异常"
+        }
+      ],
+      "extra": {
+        "rca_filter": false,
+        "rca_content": "当前存在真实异常，不能整体降噪\n- 1701.MapiVideoUpload.all_dc:今日新增连续尖刺，历史近零，判定真实异常不降噪",
+        "rca_detail": [
+          {
+            "group_detail_name": "1701.MapiVideoUpload.all_dc",
+            "is_regular": true,
+            "filter": false,
+            "rationale": "today 窗口在 deploy_begin_time(2026-07-20 18:45:44) 之后出现连续多点显著上升，1784544420~1784545320 之间峰值达 5.16 QPS 且持续约 12 分钟；day-1 与 day-2 在对应时段仅有极少打点（各 4-5 个近零值），历史窗口不存在同类突刺群，今日的错误码 1701 QPS 属新增真实异常，不应降噪。",
+            "confidence": 0.9,
+            "chart_url": ""
+          }
+        ]
+      }
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-2b78755db7f7",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "passed",
+    "cause": "tool",
+    "fault_type": "skill_wrong",
+    "action": "split_non_skill",
+    "should_repair": false,
+    "should_call_llm": true
+  }
+}

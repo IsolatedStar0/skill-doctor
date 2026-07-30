@@ -1,0 +1,235 @@
+{
+  "case_id": "puck-rule-rca-real-006",
+  "name": "真实 Aime Trace：puck-rule-rca / warning",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-66af682a1996，business_verdict=warning，doctor_status=passed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=13014313 puck_task_id=185262 psm=ad.solution.ecp rule=服务接口业务错误码QPS",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "condition": "standard",
+    "parent_run_id": "lg-66af682a1996",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 5 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 4 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 3 model message(s); assistant=2, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 5 runtime event(s), 4 tool call(s) and 3 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "data_preparation",
+          "status": "completed",
+          "message": "OpenAPI getRuleMetricInfo 成功: datasource=metrics, vregion=China-North, 2 个异常分组序列",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "timeseries_query",
+          "status": "completed",
+          "message": "并发查询 metrics_api_query today/day-1/day-2 三窗口, downsample=30s-avg",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "target_series_filter",
+          "status": "completed",
+          "message": "过滤保留 2 条目标异常时序 (30012.UpdateEcpBpModel.all_dc, 9999.UpdateEcpBpModel.all_dc); day-2 未匹配到 30012 序列",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "noise_judge",
+          "status": "completed",
+          "message": "两条序列均为脉冲型突发波动, 历史窗口无同类打点, is_regular=false, filter=null",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "finalize",
+          "status": "completed",
+          "message": "rca_filter=false, 2 条 rca_detail 生成完毕",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=5, tool_calls=4, model_messages=3, trace_metadata_keys=6.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 5 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 5,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 4 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 4,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 3 model message(s) (assistant=2, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 3,
+            "assistant": 2,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 6 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 5 runtime event(s), 4 tool call(s) and 3 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "business_result": {
+      "verdict": "rca_filter=false: 两条异常序列均为脉冲型突发, 历史窗口无同类打点, 不适用降噪, 不建议放行",
+      "verdict_type": "warning",
+      "confidence": 0.82,
+      "details": [
+        {
+          "name": "30012.UpdateEcpBpModel.all_dc",
+          "status": "warning",
+          "reason": "is_regular=false, filter=null; today 峰值 0.4/0.37 出现在发布时刻附近; day-1 仅 4 个近 0 点, day-2 未匹配到该序列"
+        },
+        {
+          "name": "9999.UpdateEcpBpModel.all_dc",
+          "status": "warning",
+          "reason": "is_regular=false, filter=null; today 峰值 1.33 明显高于历史(day-1 0.06/day-2 0.03), 脉冲型新增突发"
+        }
+      ],
+      "extra": {
+        "rca_filter": false,
+        "rca_content": "波动为脉冲突发,历史无同类,不适用降噪\n- 30012.UpdateEcpBpModel.all_dc:历史空缺\n- 9999.UpdateEcpBpModel.all_dc:历史空缺",
+        "rca_detail": [
+          {
+            "group_detail_name": "30012.UpdateEcpBpModel.all_dc",
+            "is_regular": false,
+            "filter": null,
+            "rationale": "today 在发布时刻附近出现孤立尖刺(峰值 0.4/0.37)，其余采样点接近 0；day-1 仅 4 个近 0 采样点，day-2 完全无打点；属于脉冲型突发波动且历史无同类参考，不适用降噪规则。",
+            "confidence": 0.8,
+            "chart_url": ""
+          },
+          {
+            "group_detail_name": "9999.UpdateEcpBpModel.all_dc",
+            "is_regular": false,
+            "filter": null,
+            "rationale": "today 在发布时段末段出现明显尖刺(峰值 1.33)，其余时间基本为 0；day-1/day-2 峰值仅 0.06/0.03，历史几乎无信号，属于脉冲型新增突发，不适用降噪规则。",
+            "confidence": 0.85,
+            "chart_url": ""
+          }
+        ]
+      }
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-66af682a1996",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "passed",
+    "cause": "tool",
+    "fault_type": "skill_wrong",
+    "action": "split_non_skill",
+    "should_repair": false,
+    "should_call_llm": true
+  }
+}

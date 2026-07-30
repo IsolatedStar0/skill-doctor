@@ -7,7 +7,7 @@ import secrets
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Type
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import ValidationError
 
@@ -33,6 +33,14 @@ def _allowed_origins() -> set[str]:
 
 def _default_host() -> str:
     return os.getenv("SKILL_DOCTOR_HOST", "0.0.0.0")
+
+
+def _limit(query: dict[str, list[str]], default: int = 200, maximum: int = 1000) -> int:
+    try:
+        value = int(query.get("limit", [str(default)])[0])
+    except (TypeError, ValueError):
+        return default
+    return min(max(value, 1), maximum)
 
 
 def _default_port() -> int:
@@ -112,7 +120,9 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             self.end_headers()
 
         def do_GET(self) -> None:  # noqa: N802
-            path = urlparse(self.path).path
+            parsed = urlparse(self.path)
+            path = parsed.path
+            query = parse_qs(parsed.query)
             if path == "/health":
                 self._json(
                     HTTPStatus.OK,
@@ -125,7 +135,7 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             if path == "/runs":
                 self._json(
                     HTTPStatus.OK,
-                    {"runs": service.list_runs()},
+                    {"runs": service.list_runs(_limit(query))},
                 )
                 return
             if path == "/runs/events":
@@ -162,7 +172,7 @@ def make_handler(service: RunService) -> Type[BaseHTTPRequestHandler]:
             if path == "/benchmarks":
                 self._json(
                     HTTPStatus.OK,
-                    {"benchmarks": benchmarks.list()},
+                    {"benchmarks": benchmarks.list(_limit(query))},
                 )
                 return
             if path == "/diagnostics/default":

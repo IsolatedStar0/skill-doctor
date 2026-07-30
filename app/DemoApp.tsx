@@ -7,6 +7,7 @@ import {
   stepTokenTotal,
   summarizeTokenUsage,
   type DemoCase,
+  type Taxonomy,
   type TokenUsageSummary,
   type TraceStep,
 } from "../lib/demo-engine";
@@ -30,6 +31,8 @@ import {
 } from "../lib/run-view-adapter";
 import benchmarkReportJson from "../public/benchmarks/latest.json";
 import evaluationSummaryJson from "../reports/evaluation-summary.json";
+import realTraceDatasetJson from "../benchmarks/aime-traces/puck-rule-rca-real-2026-07-30.json";
+import realTraceEvaluationReportJson from "../reports/evaluations/puck-rule-rca-real-2026-07-30.json";
 import LangGraphDashboard from "./LangGraphDashboard";
 import { useRunStore } from "./RunStore";
 
@@ -53,6 +56,7 @@ const views: { id: View; label: string; eyebrow: string }[] = [
   { id: "evaluation", label: "评测结果", eyebrow: "03" },
   { id: "architecture", label: "系统架构", eyebrow: "04" },
   { id: "orchestrator", label: "实时链路", eyebrow: "05" },
+  { id: "diagnostics", label: "诊断套件", eyebrow: "06" },
 ];
 
 const overviewActions: { id: View; label: string }[] = [
@@ -71,6 +75,190 @@ const benchmarkReport =
   benchmarkReportJson as unknown as PairedBenchmarkReport;
 const evaluationSummary =
   evaluationSummaryJson as unknown as BenchmarkEvaluationSummary;
+
+type RealTraceDataset = {
+  dataset_id: string;
+  name: string;
+  summary: {
+    sample_count: number;
+    doctor_passed: number;
+    doctor_failed: number;
+    doctor_pass_rate: number;
+    business_verdict_distribution: Record<string, number>;
+    rca_filter_distribution: Record<string, number>;
+  };
+  cases: Array<{
+    case_id: string;
+    run_id: string;
+    task: string;
+    skill_id?: string;
+    skill_version?: string;
+    doctor_result: { status: string; pass_rate: number; event_count: number };
+    business_ground_truth: {
+      verdict_type: string;
+      rca_filter: boolean | null;
+      psm?: string | null;
+    };
+    raw_run_ref?: string;
+    attribution: {
+      taxonomy?: string | null;
+      cause?: string | null;
+      fault_type?: string | null;
+      action?: string | null;
+    };
+  }>;
+};
+
+type RealTraceEvaluationReport = {
+  report_id: string;
+  title: string;
+  summary: RealTraceDataset["summary"] & {
+    average_event_count: number;
+    attribution_cause_distribution: Record<string, number>;
+    fault_type_distribution: Record<string, number>;
+  };
+  key_findings: string[];
+  failed_cases: Array<{
+    case_id: string;
+    run_id: string;
+    business_verdict_type: string;
+    doctor_status: string;
+    pass_rate: number;
+    stop_reason: string;
+  }>;
+};
+
+const realTraceDataset = realTraceDatasetJson as unknown as RealTraceDataset;
+const realTraceEvaluationReport =
+  realTraceEvaluationReportJson as unknown as RealTraceEvaluationReport;
+
+function realTraceTaxonomy(value: string | null | undefined): Taxonomy {
+  const known: Taxonomy[] = [
+    "Skill Recall Failure",
+    "Selection Error",
+    "Loading Miss",
+    "Instruction Violation",
+    "Tool Misuse",
+    "Content Gap",
+    "Non-Skill Cause",
+  ];
+  return known.includes(value as Taxonomy) ? (value as Taxonomy) : "Tool Misuse";
+}
+
+function signalsForTaxonomy(taxonomy: Taxonomy): DemoCase["signals"] {
+  const signals: DemoCase["signals"] = {
+    applicableSkillKnown: true,
+    correctSkillInCandidates: true,
+    correctSkillSelected: true,
+    skillLoaded: true,
+    toolSchemaValid: true,
+    instructionFollowed: true,
+    skillCoversRequirement: true,
+    externalFailure: null,
+  };
+
+  if (taxonomy === "Skill Recall Failure") {
+    signals.correctSkillInCandidates = false;
+  } else if (taxonomy === "Selection Error") {
+    signals.correctSkillSelected = false;
+  } else if (taxonomy === "Loading Miss") {
+    signals.skillLoaded = false;
+  } else if (taxonomy === "Tool Misuse") {
+    signals.toolSchemaValid = false;
+  } else if (taxonomy === "Instruction Violation") {
+    signals.instructionFollowed = false;
+  } else if (taxonomy === "Content Gap") {
+    signals.skillCoversRequirement = false;
+  } else {
+    signals.externalFailure = "service";
+  }
+
+  return signals;
+}
+
+function realTraceSteps(
+  item: RealTraceDataset["cases"][number],
+  taxonomy: Taxonomy,
+): TraceStep[] {
+  const statusLabel = item.doctor_result.status === "passed" ? "通过" : "未通过";
+  const passRate = plainPercent(item.doctor_result.pass_rate, 1);
+  return [
+    {
+      id: `${item.case_id}-ingest`,
+      at: "00:00.0",
+      durationMs: 0,
+      kind: "skill",
+      title: "Aime Trace 已接入",
+      detail: item.task,
+      status: "ok",
+      model: "aime-trace-ingest",
+      usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 },
+      evidence: item.raw_run_ref ?? item.run_id,
+    },
+    {
+      id: `${item.case_id}-doctor-result`,
+      at: "00:00.1",
+      durationMs: 0,
+      kind: "evaluation",
+      title: `Skill Doctor ${statusLabel}`,
+      detail: `Doctor status=${item.doctor_result.status}，pass_rate=${passRate}，event_count=${item.doctor_result.event_count}。`,
+      status: "ok",
+      model: "skill-doctor",
+      usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 },
+      evidence: item.run_id,
+    },
+    {
+      id: `${item.case_id}-attribution`,
+      at: "00:00.2",
+      durationMs: 0,
+      kind: "decision",
+      title: `归因：${taxonomy}`,
+      detail: `cause=${item.attribution.cause ?? "unknown"}，fault_type=${item.attribution.fault_type ?? "unknown"}，action=${item.attribution.action ?? "unknown"}。`,
+      status: "fault",
+      model: "skill-doctor-attribution",
+      usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 },
+      evidence: `${item.attribution.cause ?? "unknown"}/${item.attribution.fault_type ?? "unknown"}`,
+    },
+    {
+      id: `${item.case_id}-business-ground-truth`,
+      at: "00:00.3",
+      durationMs: 0,
+      kind: "evaluation",
+      title: `业务标签：${item.business_ground_truth.verdict_type}`,
+      detail: `rca_filter=${String(item.business_ground_truth.rca_filter)}，psm=${item.business_ground_truth.psm ?? "unknown"}。`,
+      status: "downstream",
+      model: "aime-business-result",
+      usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 },
+      evidence: item.business_ground_truth.verdict_type,
+    },
+  ];
+}
+
+const realTraceDemoCases: DemoCase[] = realTraceDataset.cases.map((item) => {
+  const taxonomy = realTraceTaxonomy(item.attribution.taxonomy);
+  return {
+    id: item.case_id,
+    name: `Aime Trace ${item.case_id.replace("puck-rule-rca-real-", "#")}`,
+    summary: `${item.doctor_result.status} · ${item.business_ground_truth.verdict_type} · ${taxonomy}`,
+    task: item.task,
+    expected: `业务标签：${item.business_ground_truth.verdict_type} / rca_filter=${String(item.business_ground_truth.rca_filter)}`,
+    actual: `Doctor：${item.doctor_result.status} / pass_rate=${plainPercent(item.doctor_result.pass_rate, 1)}`,
+    signals: signalsForTaxonomy(taxonomy),
+    skill: {
+      id: item.skill_id ?? "puck-rule-rca",
+      version: item.skill_version ?? "unknown",
+      retrievalScore: 1,
+      loaded: taxonomy !== "Loading Miss",
+      before: [
+        "接收 Aime 真实运行 trace。",
+        "归一化 runtime events、tool calls、model messages 与业务结果。",
+        "基于诊断规则区分 Skill 责任、工具使用问题与非 Skill 运行条件。",
+        "保存为 dataset / evaluation report / diagnostic case，供回归复用。",
+      ],
+    },
+    trace: realTraceSteps(item, taxonomy),
+  };
+});
 
 function Percent({ value }: { value: number }) {
   return <>{Math.round(value * 100)}%</>;
@@ -380,8 +568,10 @@ function signedNumber(value: number | null) {
 
 function EvaluationDashboard({
   summary,
+  realReport,
 }: {
   summary: BenchmarkEvaluationSummary;
+  realReport: RealTraceEvaluationReport;
 }) {
   return (
     <section className="evaluation-view">
@@ -422,6 +612,44 @@ function EvaluationDashboard({
           <small>平均 Token delta / overhead {signedPercent(summary.averageTokenOverheadRate)}</small>
         </article>
       </div>
+
+      <article className="panel evaluation-breakdown">
+        <div className="panel-heading">
+          <span>真实 Aime Trace 评测集</span>
+          <strong>{realReport.summary.sample_count} cases</strong>
+        </div>
+        <div className="evaluation-kpis compact-kpis">
+          <div>
+            <span>Doctor Pass Rate</span>
+            <strong>{plainPercent(realReport.summary.doctor_pass_rate, 1)}</strong>
+            <small>{realReport.summary.doctor_passed}/{realReport.summary.sample_count} 条 trace 通过执行健康检查</small>
+          </div>
+          <div>
+            <span>业务 Verdict</span>
+            <strong>
+              fail {realReport.summary.business_verdict_distribution.fail ?? 0} / warning {realReport.summary.business_verdict_distribution.warning ?? 0}
+            </strong>
+            <small>来自 Aime business_result 弱标注</small>
+          </div>
+          <div>
+            <span>RCA Filter</span>
+            <strong>
+              true {realReport.summary.rca_filter_distribution.True ?? 0} / false {realReport.summary.rca_filter_distribution.False ?? 0}
+            </strong>
+            <small>是否建议降噪</small>
+          </div>
+          <div>
+            <span>失败 Case</span>
+            <strong>{realReport.failed_cases.length}</strong>
+            <small>{realReport.failed_cases.map((item) => item.case_id).join("、")}</small>
+          </div>
+        </div>
+        <ul>
+          {realReport.key_findings.slice(0, 4).map((finding) => (
+            <li key={finding}>{finding}</li>
+          ))}
+        </ul>
+      </article>
 
       <div className="evaluation-grid">
         <article className="panel evaluation-breakdown">
@@ -499,10 +727,12 @@ function CaseStudyGallery({
   studies,
   selectedCaseId,
   onOpenCase,
+  realDataset,
 }: {
   studies: CaseStudyResult[];
   selectedCaseId: string;
   onOpenCase: (caseId: string) => void;
+  realDataset: RealTraceDataset;
 }) {
   const adopted = studies.filter(
     (item) => item.validation.decision === "ADOPT",
@@ -510,7 +740,6 @@ function CaseStudyGallery({
   const safelyRouted = studies.filter(
     (item) => item.validation.decision === "ROUTE",
   ).length;
-  const taxonomies = new Set(studies.map((item) => item.diagnosis.taxonomy));
 
   return (
     <section className="case-gallery-view">
@@ -524,12 +753,65 @@ function CaseStudyGallery({
         </div>
         <div className="case-gallery-summary">
           <span>Gallery Scope</span>
-          <strong>{studies.length} cases</strong>
+          <strong>{studies.length + realDataset.summary.sample_count} cases</strong>
           <small>
-            {taxonomies.size} 类故障 · {adopted} 个自动采纳 · {safelyRouted} 个安全路由
+            {studies.length} 个讲解样例 · {realDataset.summary.sample_count} 个真实 Aime trace · {adopted} 个自动采纳 · {safelyRouted} 个安全路由
           </small>
         </div>
       </div>
+
+      <article className="panel real-trace-library">
+        <div className="real-trace-library-header">
+          <div>
+            <span>真实案例库 / Aime Trace</span>
+            <strong>{realDataset.summary.sample_count} saved cases</strong>
+          </div>
+          <code>{realDataset.dataset_id}</code>
+        </div>
+        <p>
+          {realDataset.name} 已沉淀为 dataset，并同步保存到 diagnostic_cases，可参与回归诊断套件。
+        </p>
+        <div className="real-trace-stats">
+          <div>
+            <span>Doctor 通过</span>
+            <strong>{realDataset.summary.doctor_passed}/{realDataset.summary.sample_count}</strong>
+            <small>{plainPercent(realDataset.summary.doctor_pass_rate, 1)}</small>
+          </div>
+          <div>
+            <span>业务分布</span>
+            <strong>
+              pass {realDataset.summary.business_verdict_distribution.pass ?? 0} · fail {realDataset.summary.business_verdict_distribution.fail ?? 0}
+            </strong>
+            <small>warning {realDataset.summary.business_verdict_distribution.warning ?? 0}</small>
+          </div>
+          <div>
+            <span>降噪判断</span>
+            <strong>false {realDataset.summary.rca_filter_distribution.False ?? 0}</strong>
+            <small>true {realDataset.summary.rca_filter_distribution.True ?? 0} · unknown {realDataset.summary.rca_filter_distribution.None ?? 0}</small>
+          </div>
+        </div>
+        <div className="real-trace-case-list">
+          {realDataset.cases.map((item) => (
+            <button
+              type="button"
+              className={`real-trace-case ${item.doctor_result.status === "passed" ? "passed" : "failed"} ${item.case_id === selectedCaseId ? "selected" : ""}`}
+              key={item.case_id}
+              onClick={() => onOpenCase(item.case_id)}
+            >
+              <div className="real-trace-case-main">
+                <span>{item.case_id}</span>
+                <strong>{item.task}</strong>
+                <small>{item.run_id} · {item.business_ground_truth.psm ?? "unknown psm"}</small>
+              </div>
+              <div className="real-trace-case-badges">
+                <b>{item.doctor_result.status}</b>
+                <em>{item.business_ground_truth.verdict_type}</em>
+                <code>{item.attribution.cause ?? "—"} / {item.attribution.fault_type ?? "—"}</code>
+              </div>
+            </button>
+          ))}
+        </div>
+      </article>
 
       <div className="case-gallery-grid">
         {studies.map((study, index) => {
@@ -1324,12 +1606,16 @@ export default function DemoApp() {
   } | null>(null);
 
   const availableCases = useMemo(
+    () => [...demoCases, ...realTraceDemoCases, ...importedCases],
+    [importedCases],
+  );
+  const galleryCases = useMemo(
     () => [...demoCases, ...importedCases],
     [importedCases],
   );
   const caseStudies = useMemo(
-    () => availableCases.map((item) => analyzeCase(item)),
-    [availableCases],
+    () => galleryCases.map((item) => analyzeCase(item)),
+    [galleryCases],
   );
   const selectedCase =
     availableCases.find((item) => item.id === selectedCaseId) ?? demoCases[0];
@@ -1522,7 +1808,7 @@ export default function DemoApp() {
               </small>
             </div>
             <div className="run-registry-list">
-              {runs.slice(0, 8).map((run) => (
+              {runs.map((run) => (
                 <button
                   type="button"
                   key={run.run_id}
@@ -1784,6 +2070,7 @@ export default function DemoApp() {
             studies={caseStudies}
             selectedCaseId={selectedCaseId}
             onOpenCase={openCaseTrace}
+            realDataset={realTraceDataset}
           />
         )}
 
@@ -1846,7 +2133,10 @@ export default function DemoApp() {
         )}
 
         {view === "evaluation" && (
-          <EvaluationDashboard summary={evaluationSummary} />
+          <EvaluationDashboard
+            summary={evaluationSummary}
+            realReport={realTraceEvaluationReport}
+          />
         )}
 
         {view === "architecture" && <ArchitectureDashboard />}

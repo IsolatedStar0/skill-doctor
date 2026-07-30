@@ -36,6 +36,10 @@ def test_health_and_run_api(tmp_path: Path) -> None:
     assert listed.status_code == 200
     assert listed.json()["runs"][0]["run_id"] == payload["run_id"]
 
+    limited = client.get("/runs?limit=1")
+    assert limited.status_code == 200
+    assert len(limited.json()["runs"]) == 1
+
 
 def test_scenario_catalog_api() -> None:
     client = TestClient(app)
@@ -75,3 +79,7 @@ def test_dynamic_benchmark_api(tmp_path: Path) -> None:
     listed = client.get("/benchmarks")
     assert listed.status_code == 200
     assert listed.json()["benchmarks"][0]["run_id"] == payload["run_id"]
+
+    limited = client.get("/benchmarks?limit=1")
+    assert limited.status_code == 200
+    assert len(limited.json()["benchmarks"]) == 1

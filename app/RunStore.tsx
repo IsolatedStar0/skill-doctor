@@ -110,7 +110,7 @@ export function RunStoreProvider({ children }: { children: ReactNode }) {
             .sort((left, right) =>
               right.updated_at.localeCompare(left.updated_at),
             )
-            .slice(0, 50),
+            .slice(0, 200),
         );
         if (state.run_kind === "benchmark") {
           setBenchmarkSnapshot((current) =>

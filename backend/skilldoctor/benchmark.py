@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
@@ -252,9 +251,9 @@ class BenchmarkService:
                 ],
             },
             "artifacts": {
-                "evidenceSnapshot": str(
-                    (Path("reports") / "langgraph" / f"{child['run_id']}.json")
-                ).replace("\\", "/"),
+                "evidenceSnapshot": self.run_service.storage.run_artifact_uri(
+                    child["run_id"]
+                ),
                 "codexJsonl": artifacts.get("codexJsonl", ""),
                 "pytestOutput": artifacts.get("pytestOutput", ""),
                 "gitDiff": artifacts.get("gitDiff", ""),

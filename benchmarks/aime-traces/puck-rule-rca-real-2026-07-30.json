@@ -1,0 +1,790 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "puck-rule-rca-real-2026-07-30",
+  "name": "Puck Rule RCA Real Aime Trace Dataset",
+  "description": "Nine real Aime traces ingested by Skill Doctor for puck-rule-rca evaluation and diagnosis.",
+  "created_at": "2026-07-30T09:25:45.580290+00:00",
+  "source": {
+    "system": "aime",
+    "ingest_endpoint": "/traces",
+    "doctor_project": "skill-doctor",
+    "raw_run_directory": "reports/langgraph"
+  },
+  "scope": {
+    "skill_id": "puck-rule-rca",
+    "executor": "trace-ingest",
+    "date": "2026-07-30",
+    "case_count": 9
+  },
+  "label_policy": {
+    "business_ground_truth": "Aime business_result is treated as weak ground truth for verdict_type, rca_filter, and RCA detail fields.",
+    "doctor_result": "Skill Doctor status/pass_rate measures trace health and analyzer assertions.",
+    "human_review_required": true
+  },
+  "summary": {
+    "sample_count": 9,
+    "doctor_passed": 7,
+    "doctor_failed": 2,
+    "doctor_pass_rate": 0.7778,
+    "average_execution_pass_rate": 0.8148,
+    "average_event_count": 19.44,
+    "average_runtime_event_count": 12.56,
+    "doctor_status_distribution": {
+      "failed": 2,
+      "passed": 7
+    },
+    "business_verdict_distribution": {
+      "fail": 4,
+      "pass": 1,
+      "warning": 4
+    },
+    "rca_filter_distribution": {
+      "False": 6,
+      "None": 2,
+      "True": 1
+    },
+    "attribution_cause_distribution": {
+      "skill": 1,
+      "tool": 8
+    },
+    "fault_type_distribution": {
+      "skill_missing": 1,
+      "skill_wrong": 8
+    },
+    "stop_reason_distribution": {
+      "initial_execution_passed": 7,
+      "no_safe_skill_mutation": 2
+    }
+  },
+  "cases": [
+    {
+      "case_id": "puck-rule-rca-real-001",
+      "run_id": "lg-319fc93364aa",
+      "raw_run_ref": "reports/langgraph/lg-319fc93364aa.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=13014312 puck_task_id=185262 psm=ad.solution.ecp rule=服务接口业务错误码QPS",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 17,
+        "runtime_event_count": 12,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 5 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 3 model message(s); assistant=2, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "warning",
+        "verdict": "rca_filter=false: 两条异常序列均为脉冲型突发, 历史窗口无同类打点, 不适用降噪, 不建议整体放行",
+        "confidence": 0.82,
+        "rca_filter": false,
+        "detail_count": 2,
+        "detail_names": [
+          "30012.UpdateEcpBpModel.all_dc",
+          "9999.UpdateEcpBpModel.all_dc"
+        ],
+        "rca_detail_count": 2,
+        "psm": null,
+        "puck_task_id": null,
+        "dispatch_id": null,
+        "rule_name": null,
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "Ensure the skill explicitly instructs the agent to verify that the retrieved metric data contains sufficient historical baseline for pulse-type anomaly detection before proceeding with analysis."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-002",
+      "run_id": "lg-2552397e1349",
+      "raw_run_ref": "reports/langgraph/lg-2552397e1349.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=12941887 puck_task_id=184955 psm=aweme.pack.poi rule=【server视角】订单详情页sla分lifeBizCode",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "failed",
+        "stop_reason": "no_safe_skill_mutation",
+        "pass_rate": 0.0,
+        "passed": false,
+        "event_count": 35,
+        "runtime_event_count": 13,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": false,
+            "detail": "1 runtime event(s) reported failure (query_three_windows)."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": false,
+            "detail": "5/8 tool call(s) failed (mcp_metrics_20_metrics_bosun_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query)."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": false,
+            "detail": "Detected 1 error-shaped model message(s) across 3 total."
+          }
+        ],
+        "first_failed_runtime_event": {
+          "stage": "query_three_windows",
+          "message": "bosun MCP returns empty (date/time not honored); metrics_api_query day-1/day-2 all fail with HitCircuitBreakerException"
+        }
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "fail",
+        "verdict": "历史窗口 metrics 查询失败，无法完成同比降噪判断",
+        "confidence": null,
+        "rca_filter": false,
+        "detail_count": 2,
+        "detail_names": [
+          "general",
+          "deliver"
+        ],
+        "rca_detail_count": 2,
+        "psm": "aweme.pack.poi",
+        "puck_task_id": 184955,
+        "dispatch_id": 12941887,
+        "rule_name": "【server视角】订单详情页sla分lifeBizCode",
+        "datasource_type": "bosun",
+        "vregion": "China-North"
+      },
+      "attribution": {
+        "taxonomy": "Content Gap",
+        "cause": "skill",
+        "fault_type": "skill_wrong",
+        "action": "patch_skill",
+        "confidence": 0.88,
+        "agent_source": "llm",
+        "summary": "The skill must instruct the agent to handle Bosun MCP circuit-breaker failures by retrying with backoff or falling back to an alternative data source."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "datasource_type",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-003",
+      "run_id": "lg-e6f5daa2c60d",
+      "raw_run_ref": "reports/langgraph/lg-e6f5daa2c60d.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=12857420 puck_task_id=184520 psm=aweme.pack.poi rule=marketing_general_plugin 内存消耗平均值",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 18,
+        "runtime_event_count": 13,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 6 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 3 model message(s); assistant=1, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "fail",
+        "verdict": "存在真实异常,不能降噪\n- marketing_general_plugin.tango_go1.21.13.bm.1.0.124_X_swisstable_pgoboltv2_beast_cfe353_8858_1.0.0.38469:历史无数据,不降噪",
+        "confidence": 0.7,
+        "rca_filter": false,
+        "detail_count": 1,
+        "detail_names": [
+          "marketing_general_plugin.tango_go1.21.13.bm.1.0.124_X_swisstable_pgoboltv2_beast_cfe353_8858_1.0.0.38469"
+        ],
+        "rca_detail_count": 1,
+        "psm": "aweme.pack.poi",
+        "puck_task_id": 184520,
+        "dispatch_id": 12857420,
+        "rule_name": null,
+        "datasource_type": "metrics",
+        "vregion": "China-North"
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "当历史窗口（day-1/day-2）返回空序列时，应检查目标序列的版本号是否在历史窗口中也存在，避免因版本过滤导致历史数据被错误排除。"
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-004",
+      "run_id": "lg-5f598819d9d5",
+      "raw_run_ref": "reports/langgraph/lg-5f598819d9d5.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=12857056 puck_task_id=184520 psm=aweme.pack.poi rule=商品线索打包分场景流量",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 18,
+        "runtime_event_count": 13,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 6 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 3 model message(s); assistant=1, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "pass",
+        "verdict": "当前异常属于规律性日周期波动，可降噪（filter=true）",
+        "confidence": 0.72,
+        "rca_filter": true,
+        "detail_count": 1,
+        "detail_names": [
+          "data.life.commerce.product_detail"
+        ],
+        "rca_detail_count": 1,
+        "psm": "aweme.pack.poi",
+        "puck_task_id": 184520,
+        "dispatch_id": 12857056,
+        "rule_name": "商品线索打包分场景流量",
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "The skill's trend-shape filter should not treat a regular daily drop at 12:05 as a fault signal for a product-detail scene."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-005",
+      "run_id": "lg-2b78755db7f7",
+      "raw_run_ref": "reports/langgraph/lg-2b78755db7f7.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=13020960 puck_task_id=185310 psm=ad.creative.material_manage rule=服务接口系统错误码QPS",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 16,
+        "runtime_event_count": 11,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 2 model message(s); assistant=1, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "fail",
+        "verdict": "存在真实异常，不建议降噪",
+        "confidence": 0.9,
+        "rca_filter": false,
+        "detail_count": 1,
+        "detail_names": [
+          "1701.MapiVideoUpload.all_dc"
+        ],
+        "rca_detail_count": 1,
+        "psm": null,
+        "puck_task_id": null,
+        "dispatch_id": null,
+        "rule_name": null,
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "The skill should instruct the agent to verify that a sudden spike in a normally near-zero metric is not a data artifact before classifying it as regular."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-006",
+      "run_id": "lg-66af682a1996",
+      "raw_run_ref": "reports/langgraph/lg-66af682a1996.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=13014313 puck_task_id=185262 psm=ad.solution.ecp rule=服务接口业务错误码QPS",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 17,
+        "runtime_event_count": 12,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 5 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 3 model message(s); assistant=2, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "warning",
+        "verdict": "rca_filter=false: 两条异常序列均为脉冲型突发, 历史窗口无同类打点, 不适用降噪, 不建议放行",
+        "confidence": 0.82,
+        "rca_filter": false,
+        "detail_count": 2,
+        "detail_names": [
+          "30012.UpdateEcpBpModel.all_dc",
+          "9999.UpdateEcpBpModel.all_dc"
+        ],
+        "rca_detail_count": 2,
+        "psm": null,
+        "puck_task_id": null,
+        "dispatch_id": null,
+        "rule_name": null,
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "Ensure target series filter step retains all relevant error-code sequences even when day-2 data is missing for one group."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-007",
+      "run_id": "lg-7e2cdc10485f",
+      "raw_run_ref": "reports/langgraph/lg-7e2cdc10485f.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=12990551 puck_task_id=185178 psm=ad.searchgate.read rule=服务接口延迟",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "failed",
+        "stop_reason": "no_safe_skill_mutation",
+        "pass_rate": 0.3333333333333333,
+        "passed": false,
+        "event_count": 19,
+        "runtime_event_count": 14,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": false,
+            "detail": "1 runtime event(s) reported failure (bosun_query)."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": false,
+            "detail": "1/5 tool call(s) failed (metrics_20.metrics_bosun_query)."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 4 model message(s); assistant=2, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": {
+          "stage": "bosun_query",
+          "message": "metrics.metrics_bosun_query 忽略 date/time/duration 参数，全部返回 now-1h 空窗口，无法覆盖 today/day-1/day-2；转入拆解兜底"
+        }
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "warning",
+        "verdict": "is_regular=true; filter=false; do not denoise (no historical baseline)",
+        "confidence": null,
+        "rca_filter": null,
+        "detail_count": 0,
+        "detail_names": [],
+        "rca_detail_count": 0,
+        "psm": null,
+        "puck_task_id": null,
+        "dispatch_id": null,
+        "rule_name": null,
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "The bosun_query skill must handle date/time/duration parameters correctly for today, day-1, and day-2 windows instead of returning an empty window."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "attribution_source",
+        "datasource_type",
+        "deploy_begin_time",
+        "group_detail_name",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "rule_name",
+        "skill_runtime",
+        "source",
+        "vregion"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-008",
+      "run_id": "lg-71875a96fd56",
+      "raw_run_ref": "reports/langgraph/lg-71875a96fd56.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=13020970 puck_task_id=185310 psm=ad.creative.material_manage rule=服务接口业务错误码QPS",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 17,
+        "runtime_event_count": 12,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 5 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 5 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 2 model message(s); assistant=1, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "fail",
+        "verdict": "存在真实异常，不建议降噪 (rca_filter=false)",
+        "confidence": 0.85,
+        "rca_filter": false,
+        "detail_count": 1,
+        "detail_names": [
+          "40001.MapiAgentVideoUpload.single_dc"
+        ],
+        "rca_detail_count": 1,
+        "psm": null,
+        "puck_task_id": null,
+        "dispatch_id": null,
+        "rule_name": null,
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "Ensure the skill correctly maps the rule identifier to the appropriate timeseries query and analysis logic."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "skill_runtime",
+        "source"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    },
+    {
+      "case_id": "puck-rule-rca-real-009",
+      "run_id": "lg-ebc272ad2dcc",
+      "raw_run_ref": "reports/langgraph/lg-ebc272ad2dcc.json",
+      "source": "aime_trace_ingest",
+      "task": "执行 puck-rule-rca id=12900308 puck_task_id=184695 psm=aweme.pack.poi rule=【时延P99】POI货架（分集群）_stage",
+      "skill_id": "puck-rule-rca",
+      "skill_version": "unknown",
+      "executor": "trace-ingest",
+      "condition": "standard",
+      "doctor_result": {
+        "status": "passed",
+        "stop_reason": "initial_execution_passed",
+        "pass_rate": 1.0,
+        "passed": true,
+        "event_count": 18,
+        "runtime_event_count": 13,
+        "assertions": [
+          {
+            "id": "runtime-events-clean",
+            "source": "system",
+            "passed": true,
+            "detail": "All 6 runtime events completed."
+          },
+          {
+            "id": "tool-calls-healthy",
+            "source": "system",
+            "passed": true,
+            "detail": "All 4 tool call(s) succeeded."
+          },
+          {
+            "id": "model-dialog-clean",
+            "source": "skill",
+            "passed": true,
+            "detail": "Reviewed 4 model message(s); assistant=2, tool=0."
+          }
+        ],
+        "first_failed_runtime_event": null
+      },
+      "business_ground_truth": {
+        "label_source": "aime_business_result",
+        "verdict_type": "warning",
+        "verdict": "not_regular; filter=null; do not denoise",
+        "confidence": null,
+        "rca_filter": null,
+        "detail_count": 0,
+        "detail_names": [],
+        "rca_detail_count": 0,
+        "psm": null,
+        "puck_task_id": null,
+        "dispatch_id": null,
+        "rule_name": null,
+        "datasource_type": null,
+        "vregion": null
+      },
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_missing",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "Add a skill to handle cases where the target group_detail_name is not found in the metric detail, with fallback logic."
+      },
+      "trace_metadata_keys": [
+        "aime_session",
+        "attribution_source",
+        "datasource_type",
+        "deploy_begin_time",
+        "group_detail_name",
+        "psm",
+        "puck_task_id",
+        "row_id",
+        "rule_name",
+        "skill_runtime",
+        "source",
+        "vregion"
+      ],
+      "evaluation_notes": [
+        "business_ground_truth is derived from Aime business_result and should be reviewed before using as human gold labels.",
+        "doctor_result.status measures trace execution health, not whether rca_filter should be true or false."
+      ]
+    }
+  ]
+}

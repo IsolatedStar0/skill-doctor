@@ -5,7 +5,7 @@ import os
 
 import secrets
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -106,8 +106,10 @@ def upload_run_trace(request: TraceIngestRequest) -> dict:
 
 
 @app.get("/runs")
-def list_runs() -> dict:
-    return {"runs": service.list_runs()}
+def list_runs(
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> dict:
+    return {"runs": service.list_runs(limit)}
 
 
 @app.get("/runs/events")
@@ -152,8 +154,10 @@ def stream_benchmark(request: BenchmarkRequest) -> StreamingResponse:
 
 
 @app.get("/benchmarks")
-def list_benchmarks() -> dict:
-    return {"benchmarks": benchmarks.list()}
+def list_benchmarks(
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> dict:
+    return {"benchmarks": benchmarks.list(limit)}
 
 
 @app.get("/benchmarks/{benchmark_id}")

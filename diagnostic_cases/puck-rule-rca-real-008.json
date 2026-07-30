@@ -1,0 +1,222 @@
+{
+  "case_id": "puck-rule-rca-real-008",
+  "name": "真实 Aime Trace：puck-rule-rca / fail",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-71875a96fd56，business_verdict=fail，doctor_status=passed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=13020970 puck_task_id=185310 psm=ad.creative.material_manage rule=服务接口业务错误码QPS",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "condition": "standard",
+    "parent_run_id": "lg-71875a96fd56",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 5 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 5 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 2 model message(s); assistant=1, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 5 runtime event(s), 5 tool call(s) and 2 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "load_skill",
+          "status": "completed",
+          "message": "load_skill",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "data_preparation",
+          "status": "completed",
+          "message": "data_preparation",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "timeseries_query",
+          "status": "completed",
+          "message": "timeseries_query",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "chart_render",
+          "status": "skipped",
+          "message": "chart_render",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "noise_judgment",
+          "status": "completed",
+          "message": "noise_judgment",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=5, tool_calls=5, model_messages=2, trace_metadata_keys=6.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 5 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 5,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 5 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 5,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 2 model message(s) (assistant=1, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 2,
+            "assistant": 1,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 6 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 5 runtime event(s), 5 tool call(s) and 2 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "business_result": {
+      "verdict": "存在真实异常，不建议降噪 (rca_filter=false)",
+      "verdict_type": "fail",
+      "confidence": 0.85,
+      "details": [
+        {
+          "name": "40001.MapiAgentVideoUpload.single_dc",
+          "status": "fail",
+          "reason": "today 在 deploy_begin_time 后重点区间尖刺频次和峰值(1.23/1.73)显著超出 day-1(≤0.4) 与 day-2(≤0.1) 对齐区间，属发布后真实异常"
+        }
+      ],
+      "extra": {
+        "rca_filter": false,
+        "rca_content": "当前存在真实异常，不能整体降噪\n- 40001.MapiAgentVideoUpload.single_dc:发布后错误码QPS尖刺频次和峰值远超历史，历史同比不相似，不降噪",
+        "rca_detail": [
+          {
+            "group_detail_name": "40001.MapiAgentVideoUpload.single_dc",
+            "is_regular": true,
+            "filter": false,
+            "rationale": "today 在 deploy_begin_time(18:45:44 CST) 之后的重点观察区间出现明显的爬升与密集尖刺，峰值达到 1.23 与 1.73，多次超过 0.5；day-1 对齐同一时刻区间内基线仍保持 0~0.03，最大仅约 0.4，day-2 对齐同一时刻区间几乎全为 0~0.1；三条线在发布后区间波峰分布与波动范围明显不一致，today 的尖刺频次、峰值和持续时间均显著超出历史可解释范围，属于发布后新增的真实异常。",
+            "confidence": 0.85,
+            "chart_url": ""
+          }
+        ]
+      }
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-71875a96fd56",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "passed",
+    "cause": "tool",
+    "fault_type": "skill_wrong",
+    "action": "split_non_skill",
+    "should_repair": false,
+    "should_call_llm": true
+  }
+}

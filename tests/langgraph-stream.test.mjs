@@ -64,7 +64,7 @@ test("loads run registry summaries and selected snapshots", async () => {
     requests.push(String(url));
     return new Response(
       JSON.stringify(
-        String(url).endsWith("/runs")
+        String(url).endsWith("/runs?limit=200")
           ? { runs: [{ run_id: "lg-list001" }] }
           : { run_id: "lg-list001", events: [] },
       ),
@@ -79,7 +79,7 @@ test("loads run registry summaries and selected snapshots", async () => {
     assert.equal(runs[0].run_id, "lg-list001");
     assert.equal(state.run_id, "lg-list001");
     assert.deepEqual(requests, [
-      "http://api.test/runs",
+      "http://api.test/runs?limit=200",
       "http://api.test/runs/lg-list001",
     ]);
   } finally {

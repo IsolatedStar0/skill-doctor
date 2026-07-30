@@ -29,6 +29,11 @@ class StorageBackend(ABC):
     def list_run_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    def run_artifact_uri(self, run_id: str) -> str:
+        """Return the durable evidence reference for a persisted run."""
+
+        raise NotImplementedError
+
     @abstractmethod
     def save_benchmark(self, benchmark: dict[str, Any]) -> str:
         raise NotImplementedError
@@ -108,6 +113,9 @@ class FileStorageBackend(StorageBackend):
                     continue
         records.sort(key=lambda item: item[0], reverse=True)
         return [summary for _, summary in records[:limit]]
+
+    def run_artifact_uri(self, run_id: str) -> str:
+        return self.relative_path(self.run_directory / f"{run_id}.json").replace("\\", "/")
 
     def save_benchmark(self, benchmark: dict[str, Any]) -> str:
         return self._write_json(
@@ -233,6 +241,9 @@ class SQLiteStorageBackend(StorageBackend):
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
         return summaries
+
+    def run_artifact_uri(self, run_id: str) -> str:
+        return self._uri("runs", run_id)
 
     def save_benchmark(self, benchmark: dict[str, Any]) -> str:
         benchmark_id = str(benchmark["run_id"])

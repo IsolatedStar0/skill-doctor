@@ -1,0 +1,256 @@
+{
+  "case_id": "puck-rule-rca-real-002",
+  "name": "真实 Aime Trace：aweme.pack.poi / fail",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-2552397e1349，business_verdict=fail，doctor_status=failed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=12941887 puck_task_id=184955 psm=aweme.pack.poi rule=【server视角】订单详情页sla分lifeBizCode",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "\n\n## Preconditions\n\n- Before executing the bosun query, verify that the date/time parameters are correctly formatted and within acceptable ranges. Additionally, implement a retry mechanism with exponential backoff to handle HitCircuitBreakerException gracefully, and log any failures for debugging.\n",
+    "condition": "standard",
+    "parent_run_id": "lg-2552397e1349",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": false,
+      "pass_rate": 0.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": false,
+          "detail": "1 runtime event(s) reported failure (query_three_windows)."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": false,
+          "detail": "5/8 tool call(s) failed (mcp_metrics_20_metrics_bosun_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query)."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": false,
+          "detail": "Detected 1 error-shaped model message(s) across 3 total."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent findings: 1 failed runtime event(s) detected.; 5/8 tool call(s) failed (mcp_metrics_20_metrics_bosun_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query).; Detected 1 error-shaped model message(s) across 3 total..",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "load_skill",
+          "status": "completed",
+          "message": "loaded user_skills/puck-rule-rca",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "fetch_rule_metric_info",
+          "status": "completed",
+          "message": "OpenAPI getRuleMetricInfo success, datasource_type=bosun, vregion=China-North",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "query_three_windows",
+          "status": "failed",
+          "message": "bosun MCP returns empty (date/time not honored); metrics_api_query day-1/day-2 all fail with HitCircuitBreakerException",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "filter_target_series",
+          "status": "skipped",
+          "message": "history data unavailable, cannot compare general/deliver ratios",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "trend_shape_judge",
+          "status": "skipped",
+          "message": "no valid history series to compare; produce error result per output-contract",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "finalize",
+          "status": "completed",
+          "message": "assembled error RCA JSON (rca_filter=false, error=history_windows_query_failed)",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=6, tool_calls=8, model_messages=3, trace_metadata_keys=7.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "datasource_type",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 6 runtime event(s); failures=1.",
+          "usage": null,
+          "metadata": {
+            "count": 6,
+            "failed": 1
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 8 tool call(s); failed=5.",
+          "usage": null,
+          "metadata": {
+            "total": 8,
+            "failed": 5
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 3 model message(s) (assistant=1, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 3,
+            "assistant": 1,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 7 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "datasource_type",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "failed",
+          "message": "Agent findings: 1 failed runtime event(s) detected.; 5/8 tool call(s) failed (mcp_metrics_20_metrics_bosun_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query).; Detected 1 error-shaped model message(s) across 3 total..",
+          "usage": null,
+          "metadata": {
+            "passed": false,
+            "pass_rate": 0.0,
+            "assertion_count": 3,
+            "findings": [
+              "1 failed runtime event(s) detected.",
+              "5/8 tool call(s) failed (mcp_metrics_20_metrics_bosun_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query).",
+              "Detected 1 error-shaped model message(s) across 3 total."
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "failed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": false,
+            "pass_rate": 0.0,
+            "findings_count": 3
+          }
+        }
+      ],
+      "error": "1 failed runtime event(s) detected."
+    },
+    "business_result": {
+      "verdict": "历史窗口 metrics 查询失败，无法完成同比降噪判断",
+      "verdict_type": "fail",
+      "confidence": null,
+      "details": [
+        {
+          "name": "general",
+          "status": "fail",
+          "reason": "day-1/day-2 分子/分母查询命中 HitCircuitBreakerException，历史时序缺失"
+        },
+        {
+          "name": "deliver",
+          "status": "fail",
+          "reason": "day-1/day-2 分子/分母查询命中 HitCircuitBreakerException，历史时序缺失"
+        }
+      ],
+      "extra": {
+        "rca_filter": false,
+        "rca_content": "历史窗口查询失败，无法降噪\n- general:历史查询失败\n- deliver:历史查询失败",
+        "rca_detail": [
+          {
+            "group_detail_name": "general",
+            "is_regular": false,
+            "filter": null,
+            "rationale": "day-1 / day-2 分子分母查询在 metrics.metrics_api_query 上多次返回 HitCircuitBreakerException(查询序列数过多)，bosun MCP 未能按 date/time 返回历史窗口有效数据，无法获取历史同比时序，无法完成规律性形态对比。",
+            "confidence": null,
+            "chart_url": "",
+            "error": "history_windows_query_failed"
+          },
+          {
+            "group_detail_name": "deliver",
+            "is_regular": false,
+            "filter": null,
+            "rationale": "day-1 / day-2 分子分母查询在 metrics.metrics_api_query 上多次返回 HitCircuitBreakerException(查询序列数过多)，bosun MCP 未能按 date/time 返回历史窗口有效数据，无法获取历史同比时序，无法完成规律性形态对比。",
+            "confidence": null,
+            "chart_url": "",
+            "error": "history_windows_query_failed"
+          }
+        ],
+        "id": 12941887,
+        "puck_task_id": 184955,
+        "psm": "aweme.pack.poi",
+        "rule_name": "【server视角】订单详情页sla分lifeBizCode",
+        "datasource_type": "bosun",
+        "vregion": "China-North"
+      }
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-2552397e1349",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "failed",
+    "cause": "skill",
+    "fault_type": "skill_wrong",
+    "action": "patch_skill",
+    "should_repair": true,
+    "should_call_llm": true
+  }
+}

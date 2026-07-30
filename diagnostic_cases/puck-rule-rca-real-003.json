@@ -1,0 +1,235 @@
+{
+  "case_id": "puck-rule-rca-real-003",
+  "name": "真实 Aime Trace：aweme.pack.poi / fail",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-e6f5daa2c60d，business_verdict=fail，doctor_status=passed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=12857420 puck_task_id=184520 psm=aweme.pack.poi rule=marketing_general_plugin 内存消耗平均值",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "condition": "standard",
+    "parent_run_id": "lg-e6f5daa2c60d",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 6 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 4 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 3 model message(s); assistant=1, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 6 runtime event(s), 4 tool call(s) and 3 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "load_skill",
+          "status": "completed",
+          "message": "loaded user_skills/puck-rule-rca and metrics_20 MCP",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "fetch_metric_info",
+          "status": "completed",
+          "message": "fetch_rule_metric_info.py 返回 datasource_type=metrics, group_detail_name 非空, vregion=China-North",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "query_three_windows",
+          "status": "completed",
+          "message": "并发查询 today/day-1/day-2；wildcard version 触发限流，改用 group_key_values.version 精确过滤重查",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "filter_series",
+          "status": "completed",
+          "message": "today 命中 1 条目标序列，共 60 个 30s 打点；day-1/day-2 返回空序列",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "noise_judge",
+          "status": "completed",
+          "message": "遵循优先判断规则：day-1/day-2 均缺失历史打点 → is_regular=true, filter=false",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "finalize",
+          "status": "completed",
+          "message": "组装 rca_filter=false, rca_content, rca_detail 输出",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=6, tool_calls=4, model_messages=3, trace_metadata_keys=6.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 6 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 6,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 4 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 4,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 3 model message(s) (assistant=1, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 3,
+            "assistant": 1,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 6 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "skill_runtime",
+              "source"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 6 runtime event(s), 4 tool call(s) and 3 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "business_result": {
+      "verdict": "存在真实异常,不能降噪\n- marketing_general_plugin.tango_go1.21.13.bm.1.0.124_X_swisstable_pgoboltv2_beast_cfe353_8858_1.0.0.38469:历史无数据,不降噪",
+      "verdict_type": "fail",
+      "confidence": 0.7,
+      "details": [
+        {
+          "name": "marketing_general_plugin.tango_go1.21.13.bm.1.0.124_X_swisstable_pgoboltv2_beast_cfe353_8858_1.0.0.38469",
+          "status": "fail",
+          "reason": "day-1/day-2 无历史打点数据，判定为可能的新增异常，不建议降噪 (is_regular=true, filter=false)"
+        }
+      ],
+      "extra": {
+        "rca_filter": false,
+        "rca_content": "存在真实异常,不能降噪\n- marketing_general_plugin.tango_go1.21.13.bm.1.0.124_X_swisstable_pgoboltv2_beast_cfe353_8858_1.0.0.38469:历史无数据,不降噪",
+        "rca_detail": [
+          {
+            "group_detail_name": "marketing_general_plugin.tango_go1.21.13.bm.1.0.124_X_swisstable_pgoboltv2_beast_cfe353_8858_1.0.0.38469",
+            "is_regular": true,
+            "filter": false,
+            "rationale": "历史窗口 day-1/day-2 均无该版本打点数据，可能是新增异常，不建议进行降噪处理",
+            "confidence": 0.7,
+            "chart_url": ""
+          }
+        ],
+        "puck_task_id": 184520,
+        "dispatch_id": 12857420,
+        "psm": "aweme.pack.poi",
+        "vregion": "China-North",
+        "datasource_type": "metrics",
+        "metric": "ttarch.lego.sdk.monitor.memUsage.avg"
+      }
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-e6f5daa2c60d",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "passed",
+    "cause": "tool",
+    "fault_type": "skill_wrong",
+    "action": "split_non_skill",
+    "should_repair": false,
+    "should_call_llm": true
+  }
+}

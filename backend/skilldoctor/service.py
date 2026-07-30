@@ -1514,11 +1514,18 @@ class RunService:
             pass
         return self.registry.get(run_id)
 
-    def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
-        summaries = self.storage.list_run_summaries(limit)
-        if summaries:
-            return summaries
-        return self.registry.list(limit)
+    def list_runs(self, limit: int = 200) -> list[dict[str, Any]]:
+        summaries_by_id = {
+            item["run_id"]: item
+            for item in self.storage.list_run_summaries(limit)
+        }
+        for item in self.registry.list(limit):
+            summaries_by_id[item["run_id"]] = item
+        return sorted(
+            summaries_by_id.values(),
+            key=lambda item: item.get("updated_at", ""),
+            reverse=True,
+        )[:limit]
 
     @property
     def registry(self) -> RunRegistry:

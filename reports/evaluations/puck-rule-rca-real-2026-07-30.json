@@ -1,0 +1,275 @@
+{
+  "schema_version": "1.0",
+  "report_id": "eval-puck-rule-rca-real-2026-07-30",
+  "dataset_id": "puck-rule-rca-real-2026-07-30",
+  "generated_at": "2026-07-30T09:25:45.580290+00:00",
+  "title": "Puck Rule RCA Real Trace Evaluation Report",
+  "summary": {
+    "sample_count": 9,
+    "doctor_passed": 7,
+    "doctor_failed": 2,
+    "doctor_pass_rate": 0.7778,
+    "average_execution_pass_rate": 0.8148,
+    "average_event_count": 19.44,
+    "average_runtime_event_count": 12.56,
+    "doctor_status_distribution": {
+      "failed": 2,
+      "passed": 7
+    },
+    "business_verdict_distribution": {
+      "fail": 4,
+      "pass": 1,
+      "warning": 4
+    },
+    "rca_filter_distribution": {
+      "False": 6,
+      "None": 2,
+      "True": 1
+    },
+    "attribution_cause_distribution": {
+      "skill": 1,
+      "tool": 8
+    },
+    "fault_type_distribution": {
+      "skill_missing": 1,
+      "skill_wrong": 8
+    },
+    "stop_reason_distribution": {
+      "initial_execution_passed": 7,
+      "no_safe_skill_mutation": 2
+    }
+  },
+  "key_findings": [
+    "Doctor processed 9 real Aime trace(s) for puck-rule-rca.",
+    "Doctor execution-health pass rate is 77.8% (7/9).",
+    "Business verdict distribution is {'warning': 4, 'fail': 4, 'pass': 1}; this is not equivalent to Doctor pass/fail.",
+    "The two Doctor failed cases are caused by failed metric/Bosun query events rather than missing persisted trace records.",
+    "Aime business_result is currently used as weak ground truth; manual review labels are still needed before treating this as a gold benchmark."
+  ],
+  "quality_metrics": {
+    "doctor_pass_rate": 0.7778,
+    "average_execution_pass_rate": 0.8148,
+    "failed_case_count": 2,
+    "failed_case_ids": [
+      "puck-rule-rca-real-002",
+      "puck-rule-rca-real-007"
+    ]
+  },
+  "business_metrics": {
+    "verdict_distribution": {
+      "fail": 4,
+      "pass": 1,
+      "warning": 4
+    },
+    "rca_filter_distribution": {
+      "False": 6,
+      "None": 2,
+      "True": 1
+    },
+    "average_business_confidence": 0.8017,
+    "confidence_coverage": 0.6667
+  },
+  "diagnostic_metrics": {
+    "attribution_cause_distribution": {
+      "skill": 1,
+      "tool": 8
+    },
+    "fault_type_distribution": {
+      "skill_missing": 1,
+      "skill_wrong": 8
+    },
+    "stop_reason_distribution": {
+      "initial_execution_passed": 7,
+      "no_safe_skill_mutation": 2
+    },
+    "average_event_count": 19.44,
+    "average_runtime_event_count": 12.56
+  },
+  "failed_cases": [
+    {
+      "case_id": "puck-rule-rca-real-002",
+      "run_id": "lg-2552397e1349",
+      "task": "执行 puck-rule-rca id=12941887 puck_task_id=184955 psm=aweme.pack.poi rule=【server视角】订单详情页sla分lifeBizCode",
+      "business_verdict_type": "fail",
+      "doctor_status": "failed",
+      "pass_rate": 0.0,
+      "stop_reason": "no_safe_skill_mutation",
+      "first_failed_runtime_event": {
+        "stage": "query_three_windows",
+        "message": "bosun MCP returns empty (date/time not honored); metrics_api_query day-1/day-2 all fail with HitCircuitBreakerException"
+      },
+      "failed_assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": false,
+          "detail": "1 runtime event(s) reported failure (query_three_windows)."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": false,
+          "detail": "5/8 tool call(s) failed (mcp_metrics_20_metrics_bosun_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query, mcp_metrics_20_metrics_api_query)."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": false,
+          "detail": "Detected 1 error-shaped model message(s) across 3 total."
+        }
+      ],
+      "attribution": {
+        "taxonomy": "Content Gap",
+        "cause": "skill",
+        "fault_type": "skill_wrong",
+        "action": "patch_skill",
+        "confidence": 0.88,
+        "agent_source": "llm",
+        "summary": "The skill must instruct the agent to handle Bosun MCP circuit-breaker failures by retrying with backoff or falling back to an alternative data source."
+      }
+    },
+    {
+      "case_id": "puck-rule-rca-real-007",
+      "run_id": "lg-7e2cdc10485f",
+      "task": "执行 puck-rule-rca id=12990551 puck_task_id=185178 psm=ad.searchgate.read rule=服务接口延迟",
+      "business_verdict_type": "warning",
+      "doctor_status": "failed",
+      "pass_rate": 0.3333333333333333,
+      "stop_reason": "no_safe_skill_mutation",
+      "first_failed_runtime_event": {
+        "stage": "bosun_query",
+        "message": "metrics.metrics_bosun_query 忽略 date/time/duration 参数，全部返回 now-1h 空窗口，无法覆盖 today/day-1/day-2；转入拆解兜底"
+      },
+      "failed_assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": false,
+          "detail": "1 runtime event(s) reported failure (bosun_query)."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": false,
+          "detail": "1/5 tool call(s) failed (metrics_20.metrics_bosun_query)."
+        }
+      ],
+      "attribution": {
+        "taxonomy": "Tool Misuse",
+        "cause": "tool",
+        "fault_type": "skill_wrong",
+        "action": "split_non_skill",
+        "confidence": 0.72,
+        "agent_source": "llm",
+        "summary": "The bosun_query skill must handle date/time/duration parameters correctly for today, day-1, and day-2 windows instead of returning an empty window."
+      }
+    }
+  ],
+  "case_table": [
+    {
+      "case_id": "puck-rule-rca-real-001",
+      "run_id": "lg-319fc93364aa",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "warning",
+      "rca_filter": false,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-319fc93364aa.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-002",
+      "run_id": "lg-2552397e1349",
+      "status": "failed",
+      "pass_rate": 0.0,
+      "business_verdict_type": "fail",
+      "rca_filter": false,
+      "attribution_cause": "skill",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-2552397e1349.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-003",
+      "run_id": "lg-e6f5daa2c60d",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "fail",
+      "rca_filter": false,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-e6f5daa2c60d.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-004",
+      "run_id": "lg-5f598819d9d5",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "pass",
+      "rca_filter": true,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-5f598819d9d5.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-005",
+      "run_id": "lg-2b78755db7f7",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "fail",
+      "rca_filter": false,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-2b78755db7f7.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-006",
+      "run_id": "lg-66af682a1996",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "warning",
+      "rca_filter": false,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-66af682a1996.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-007",
+      "run_id": "lg-7e2cdc10485f",
+      "status": "failed",
+      "pass_rate": 0.3333333333333333,
+      "business_verdict_type": "warning",
+      "rca_filter": null,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-7e2cdc10485f.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-008",
+      "run_id": "lg-71875a96fd56",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "fail",
+      "rca_filter": false,
+      "attribution_cause": "tool",
+      "fault_type": "skill_wrong",
+      "raw_run_ref": "reports/langgraph/lg-71875a96fd56.json"
+    },
+    {
+      "case_id": "puck-rule-rca-real-009",
+      "run_id": "lg-ebc272ad2dcc",
+      "status": "passed",
+      "pass_rate": 1.0,
+      "business_verdict_type": "warning",
+      "rca_filter": null,
+      "attribution_cause": "tool",
+      "fault_type": "skill_missing",
+      "raw_run_ref": "reports/langgraph/lg-ebc272ad2dcc.json"
+    }
+  ],
+  "recommendations": [
+    "Promote this dataset to a named regression suite after adding manually reviewed gold labels for expected RCA outcome and expected attribution.",
+    "Separate execution-health metrics from business-correctness metrics in the UI and reports.",
+    "Add a batch evaluation command/API that can re-run this dataset and compare future skill revisions against the current baseline.",
+    "Track tool/query failure categories separately from skill-content defects to avoid over-counting skill regressions."
+  ]
+}

@@ -452,8 +452,8 @@ function apiBaseUrl(value?: string) {
   ).replace(/\/$/, "");
 }
 
-export async function listAgentRuns(value?: string) {
-  const response = await fetch(`${apiBaseUrl(value)}/runs`);
+export async function listAgentRuns(value?: string, limit = 200) {
+  const response = await fetch(`${apiBaseUrl(value)}/runs?limit=${limit}`);
   if (!response.ok) {
     throw new Error(`Run list request failed with ${response.status}.`);
   }

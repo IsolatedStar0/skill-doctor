@@ -1,0 +1,222 @@
+{
+  "case_id": "puck-rule-rca-real-009",
+  "name": "真实 Aime Trace：puck-rule-rca / warning",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-ebc272ad2dcc，business_verdict=warning，doctor_status=passed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=12900308 puck_task_id=184695 psm=aweme.pack.poi rule=【时延P99】POI货架（分集群）_stage",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "condition": "standard",
+    "parent_run_id": "lg-ebc272ad2dcc",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 6 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 4 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 4 model message(s); assistant=2, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 6 runtime event(s), 4 tool call(s) and 4 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "load_skill",
+          "status": "completed",
+          "message": "loaded puck-rule-rca skill",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "data_prep",
+          "status": "completed",
+          "message": "fetched metric detail via OpenAPI",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "timeseries_query",
+          "status": "completed",
+          "message": "queried today/day-1/day-2 concurrently via metrics_api_query",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "filter_target_series",
+          "status": "completed",
+          "message": "matched group_detail_name search.PackPoiShelf.aweme.poi.commerce.single_dc",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "trend_judge",
+          "status": "completed",
+          "message": "is_regular=false, filter=null",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "finalize",
+          "status": "completed",
+          "message": "produced final rca JSON",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=6, tool_calls=4, model_messages=4, trace_metadata_keys=12.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "attribution_source",
+              "datasource_type",
+              "deploy_begin_time",
+              "group_detail_name",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "rule_name",
+              "skill_runtime",
+              "source",
+              "vregion"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 6 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 6,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 4 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 4,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 4 model message(s) (assistant=2, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 4,
+            "assistant": 2,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 12 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "attribution_source",
+              "datasource_type",
+              "deploy_begin_time",
+              "group_detail_name",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "rule_name",
+              "skill_runtime",
+              "source",
+              "vregion"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 6 runtime event(s), 4 tool call(s) and 4 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "business_result": {
+      "verdict": "not_regular; filter=null; do not denoise",
+      "verdict_type": "warning",
+      "confidence": null,
+      "details": [],
+      "extra": {}
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-ebc272ad2dcc",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "passed",
+    "cause": "tool",
+    "fault_type": "skill_missing",
+    "action": "split_non_skill",
+    "should_repair": false,
+    "should_call_llm": true
+  }
+}

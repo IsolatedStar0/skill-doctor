@@ -4,6 +4,7 @@ import threading
 import time
 from pathlib import Path
 
+from backend.skilldoctor import start
 from backend.skilldoctor.http_server import make_handler, parser
 from backend.skilldoctor.service import RunService
 from http.server import ThreadingHTTPServer
@@ -34,6 +35,21 @@ def test_dependency_free_server_port_can_use_cloud_env(monkeypatch) -> None:
     args = parser().parse_args([])
 
     assert args.port == 9876
+
+
+def test_hosted_fastapi_start_uses_cloud_port(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setenv("PORT", "9877")
+    monkeypatch.setattr(start.uvicorn, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    start.main()
+
+    assert calls == [
+        (
+            ("backend.skilldoctor.api:app",),
+            {"host": "0.0.0.0", "port": 9877},
+        )
+    ]
 
 
 def test_dependency_free_server_returns_scenario_catalog() -> None:
@@ -140,6 +156,53 @@ def test_dependency_free_server_streams_graph_states(tmp_path: Path) -> None:
         event_connection.close()
         service.registry.publish(states[-1])
         time.sleep(0.3)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_dependency_free_server_run_list_accepts_limit(tmp_path: Path) -> None:
+    service = RunService(PROJECT_ROOT)
+    service.report_directory = tmp_path
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        for index in range(2):
+            connection = http.client.HTTPConnection(
+                "127.0.0.1",
+                server.server_port,
+                timeout=10,
+            )
+            connection.request(
+                "POST",
+                "/runs",
+                body=json.dumps(
+                    {
+                        "skill_id": f"demo-skill-{index}",
+                        "executor": "fixture",
+                        "scenario": "content-gap",
+                    }
+                ),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            response.read()
+            assert response.status == 200
+
+        connection = http.client.HTTPConnection(
+            "127.0.0.1",
+            server.server_port,
+            timeout=10,
+        )
+        connection.request("GET", "/runs?limit=1")
+        response = connection.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+
+        assert response.status == 200
+        assert len(payload["runs"]) == 1
     finally:
         server.shutdown()
         server.server_close()

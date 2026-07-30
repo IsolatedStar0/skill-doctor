@@ -3,6 +3,7 @@ from pathlib import Path
 from backend.skilldoctor.benchmark import BenchmarkService
 from backend.skilldoctor.models import BenchmarkRequest
 from backend.skilldoctor.service import RunService
+from backend.skilldoctor.storage import SQLiteStorageBackend
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +31,9 @@ def test_dynamic_pair_creates_parent_and_controlled_children(
     assert state["treatment"]["condition"] == "with_skill"
     assert state["report"]["summary"]["completedPairs"] == 1
     assert state["report"]["summary"]["averagePassRateDelta"] == 0.5
+    assert state["control"]["artifacts"]["evidenceSnapshot"].endswith(
+        f"{state['control_run_id']}.json"
+    )
 
     control = runs.get(state["control_run_id"])
     treatment = runs.get(state["treatment_run_id"])
@@ -40,6 +44,26 @@ def test_dynamic_pair_creates_parent_and_controlled_children(
     assert treatment["repair_enabled"] is False
     assert "repair_patch" not in control
     assert "repair_patch" not in treatment
+
+
+def test_benchmark_artifacts_use_storage_uri_for_sqlite(
+    tmp_path: Path,
+) -> None:
+    storage = SQLiteStorageBackend(tmp_path)
+    runs = RunService(PROJECT_ROOT, storage=storage)
+
+    state = BenchmarkService(runs).run(
+        BenchmarkRequest(
+            executor="fixture",
+            skill_id="tdd-workflow",
+        )
+    )
+
+    assert state["control"]["artifacts"]["evidenceSnapshot"].startswith("sqlite://")
+    assert f"#runs/{state['control_run_id']}" in state["control"]["artifacts"][
+        "evidenceSnapshot"
+    ]
+    assert state["treatment"]["artifacts"]["evidenceSnapshot"].startswith("sqlite://")
 
 
 def test_dynamic_pair_calculates_token_duration_and_regression(

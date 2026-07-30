@@ -1,0 +1,232 @@
+{
+  "case_id": "puck-rule-rca-real-007",
+  "name": "真实 Aime Trace：puck-rule-rca / warning",
+  "description": "Dataset puck-rule-rca-real-2026-07-30 中沉淀的真实 Aime trace；run_id=lg-7e2cdc10485f，business_verdict=warning，doctor_status=failed。",
+  "source": "saved_run",
+  "trace": {
+    "task": "执行 puck-rule-rca id=12990551 puck_task_id=185178 psm=ad.searchgate.read rule=服务接口延迟",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "condition": "standard",
+    "parent_run_id": "lg-7e2cdc10485f",
+    "repair_enabled": true,
+    "max_attempts": 1,
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": false,
+      "pass_rate": 0.3333333333333333,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": false,
+          "detail": "1 runtime event(s) reported failure (bosun_query)."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": false,
+          "detail": "1/5 tool call(s) failed (metrics_20.metrics_bosun_query)."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 4 model message(s); assistant=2, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent findings: 1 failed runtime event(s) detected.; 1/5 tool call(s) failed (metrics_20.metrics_bosun_query)..",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "load_skill",
+          "status": "completed",
+          "message": "loaded puck-rule-rca & metrics_20 skills",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "data_prep",
+          "status": "completed",
+          "message": "fetch_rule_metric_info.py returned datasource_type=bosun, group_detail_name=ecp_strategy.Query",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "bosun_query",
+          "status": "failed",
+          "message": "metrics.metrics_bosun_query 忽略 date/time/duration 参数，全部返回 now-1h 空窗口，无法覆盖 today/day-1/day-2；转入拆解兜底",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "timeseries_query",
+          "status": "completed",
+          "message": "拆解 Bosun 表达式后通过 metrics_api_query 并发查询 today/day-1/day-2（downsample=30s-avg，vregion=China-North）",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "filter_target_series",
+          "status": "completed",
+          "message": "today 命中 ecp_strategy.Query；day-1/day-2 过滤后未匹配到 _cluster=ecp_strategy 目标序列",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "trend_judge",
+          "status": "completed",
+          "message": "历史窗口无对照，套用 skill 无历史数据规则：is_regular=true, filter=false",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "finalize",
+          "status": "completed",
+          "message": "produced final rca JSON",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=7, tool_calls=5, model_messages=4, trace_metadata_keys=12.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_session",
+              "attribution_source",
+              "datasource_type",
+              "deploy_begin_time",
+              "group_detail_name",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "rule_name",
+              "skill_runtime",
+              "source",
+              "vregion"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 7 runtime event(s); failures=1.",
+          "usage": null,
+          "metadata": {
+            "count": 7,
+            "failed": 1
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 5 tool call(s); failed=1.",
+          "usage": null,
+          "metadata": {
+            "total": 5,
+            "failed": 1
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 4 model message(s) (assistant=2, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 4,
+            "assistant": 2,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 12 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_session",
+              "attribution_source",
+              "datasource_type",
+              "deploy_begin_time",
+              "group_detail_name",
+              "psm",
+              "puck_task_id",
+              "row_id",
+              "rule_name",
+              "skill_runtime",
+              "source",
+              "vregion"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "failed",
+          "message": "Agent findings: 1 failed runtime event(s) detected.; 1/5 tool call(s) failed (metrics_20.metrics_bosun_query)..",
+          "usage": null,
+          "metadata": {
+            "passed": false,
+            "pass_rate": 0.3333,
+            "assertion_count": 3,
+            "findings": [
+              "1 failed runtime event(s) detected.",
+              "1/5 tool call(s) failed (metrics_20.metrics_bosun_query)."
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "failed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": false,
+            "pass_rate": 0.3333,
+            "findings_count": 2
+          }
+        }
+      ],
+      "error": "1 failed runtime event(s) detected."
+    },
+    "business_result": {
+      "verdict": "is_regular=true; filter=false; do not denoise (no historical baseline)",
+      "verdict_type": "warning",
+      "confidence": null,
+      "details": [],
+      "extra": {}
+    },
+    "runtime_events": [],
+    "tool_calls": [],
+    "model_messages": [],
+    "trace_metadata": {
+      "saved_from_run_id": "lg-7e2cdc10485f",
+      "saved_at": "2026-07-30T09:36:00Z",
+      "source": "saved_run"
+    }
+  },
+  "expectation": {
+    "status": "failed",
+    "cause": "tool",
+    "fault_type": "skill_wrong",
+    "action": "split_non_skill",
+    "should_repair": false,
+    "should_call_llm": true
+  }
+}
