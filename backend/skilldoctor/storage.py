@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,10 @@ class StorageBackend(ABC):
 
     @abstractmethod
     def get_run(self, run_id: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_run_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     @abstractmethod
@@ -83,6 +88,26 @@ class FileStorageBackend(StorageBackend):
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self._read_json(self.run_directory / f"{run_id}.json")
+
+    def list_run_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
+        records: list[tuple[int, dict[str, Any]]] = []
+        for directory in (self.run_directory, self.benchmark_directory):
+            if not directory.is_dir():
+                continue
+            for path in directory.glob("*.json"):
+                try:
+                    state = self._read_json(path)
+                    updated_at = _datetime_from_ns(path.stat().st_mtime_ns)
+                    records.append(
+                        (
+                            path.stat().st_mtime_ns,
+                            _run_summary_from_state(state, updated_at),
+                        )
+                    )
+                except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
+        records.sort(key=lambda item: item[0], reverse=True)
+        return [summary for _, summary in records[:limit]]
 
     def save_benchmark(self, benchmark: dict[str, Any]) -> str:
         return self._write_json(
@@ -184,6 +209,30 @@ class SQLiteStorageBackend(StorageBackend):
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self._get_payload("runs", "run_id", run_id)
+
+    def list_run_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
+        rows: list[tuple[str, str]] = []
+        with self._connect() as connection:
+            rows.extend(
+                connection.execute(
+                    "SELECT updated_at, payload FROM runs ORDER BY updated_at DESC, run_id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            )
+            rows.extend(
+                connection.execute(
+                    "SELECT updated_at, payload FROM benchmarks ORDER BY updated_at DESC, benchmark_id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            )
+        rows.sort(key=lambda item: item[0], reverse=True)
+        summaries: list[dict[str, Any]] = []
+        for updated_at, payload in rows[:limit]:
+            try:
+                summaries.append(_run_summary_from_state(json.loads(payload), updated_at))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return summaries
 
     def save_benchmark(self, benchmark: dict[str, Any]) -> str:
         benchmark_id = str(benchmark["run_id"])
@@ -387,8 +436,35 @@ class SQLiteStorageBackend(StorageBackend):
             payload.get("updated_at")
             or payload.get("created_at")
             or payload.get("generated_at")
-            or ""
+            or _now()
         )
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _datetime_from_ns(value: int) -> str:
+    return datetime.fromtimestamp(value / 1_000_000_000, UTC).isoformat()
+
+
+def _run_summary_from_state(state: dict[str, Any], updated_at: str) -> dict[str, Any]:
+    return {
+        "run_kind": state.get("run_kind", "agent"),
+        "run_id": state["run_id"],
+        "parent_run_id": state.get("parent_run_id"),
+        "skill_id": state.get("skill_id", ""),
+        "skill_version": state.get("skill_version", ""),
+        "executor": state.get("executor", ""),
+        "scenario": state.get("scenario", ""),
+        "condition": state.get("condition", "standard"),
+        "attempt": state.get("attempt", 0),
+        "max_attempts": state.get("max_attempts", 0),
+        "status": state["status"],
+        "stop_reason": state.get("stop_reason", ""),
+        "event_count": len(state.get("events", [])),
+        "updated_at": updated_at,
+    }
 
 
 def build_storage_backend(project_root: Path) -> StorageBackend:

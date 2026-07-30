@@ -521,6 +521,12 @@ def test_sqlite_storage_backend_persists_runtime_assets(tmp_path: Path) -> None:
     assert storage.list_rejection_memory(
         candidate["skill_id"]
     )[0]["rejection_id"] == "rej-sqlite001"
+    assert storage.list_run_summaries()[0]["run_id"] == state["run_id"]
+
+    restarted_storage = SQLiteStorageBackend(tmp_path, storage.database_path)
+    restarted_service = RunService(PROJECT_ROOT, storage=restarted_storage)
+    assert restarted_service.get(state["run_id"])["run_id"] == state["run_id"]
+    assert restarted_service.list_runs()[0]["run_id"] == state["run_id"]
 
 
 def test_build_storage_backend_uses_sqlite_from_environment(
