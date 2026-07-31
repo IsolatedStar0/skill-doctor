@@ -29,6 +29,10 @@ class StorageBackend(ABC):
     def list_run_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
         raise NotImplementedError
 
+    @abstractmethod
+    def list_benchmark_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
     def run_artifact_uri(self, run_id: str) -> str:
         """Return the durable evidence reference for a persisted run."""
 
@@ -111,6 +115,25 @@ class FileStorageBackend(StorageBackend):
                     )
                 except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
                     continue
+        records.sort(key=lambda item: item[0], reverse=True)
+        return [summary for _, summary in records[:limit]]
+
+    def list_benchmark_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
+        records: list[tuple[int, dict[str, Any]]] = []
+        if not self.benchmark_directory.is_dir():
+            return []
+        for path in self.benchmark_directory.glob("*.json"):
+            try:
+                state = self._read_json(path)
+                updated_at = _datetime_from_ns(path.stat().st_mtime_ns)
+                records.append(
+                    (
+                        path.stat().st_mtime_ns,
+                        _run_summary_from_state(state, updated_at),
+                    )
+                )
+            except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+                continue
         records.sort(key=lambda item: item[0], reverse=True)
         return [summary for _, summary in records[:limit]]
 
@@ -236,6 +259,20 @@ class SQLiteStorageBackend(StorageBackend):
         rows.sort(key=lambda item: item[0], reverse=True)
         summaries: list[dict[str, Any]] = []
         for updated_at, payload in rows[:limit]:
+            try:
+                summaries.append(_run_summary_from_state(json.loads(payload), updated_at))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return summaries
+
+    def list_benchmark_summaries(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT updated_at, payload FROM benchmarks ORDER BY updated_at DESC, benchmark_id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        summaries: list[dict[str, Any]] = []
+        for updated_at, payload in rows:
             try:
                 summaries.append(_run_summary_from_state(json.loads(payload), updated_at))
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):

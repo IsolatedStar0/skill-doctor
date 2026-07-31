@@ -74,6 +74,7 @@ def test_dependency_free_server_returns_scenario_catalog() -> None:
             "content-gap",
             "loading-miss",
             "platform-error",
+            "network-error",
         ]
     finally:
         server.shutdown()

@@ -169,11 +169,7 @@ class BenchmarkService:
         return self.run_service.registry.get(benchmark_id)
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
-        return [
-            item
-            for item in self.run_service.list_runs(limit * 2)
-            if item["run_kind"] == "benchmark"
-        ][:limit]
+        return self.run_service.list_runs(limit, run_kind="benchmark")
 
     def _publish(self, state: dict[str, Any]) -> dict[str, Any]:
         snapshot = self.run_service.storage.snapshot(state)

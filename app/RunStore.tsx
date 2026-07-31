@@ -25,36 +25,81 @@ type RunStoreValue = {
   clearRun: () => void;
   benchmarkSnapshot: BenchmarkState | null;
   setBenchmarkSnapshot: (snapshot: BenchmarkState | null) => void;
+  selectedRunId: string | null;
+  selectedRunKind: "agent" | "benchmark" | null;
   runs: RunSummary[];
   registryStatus: "connecting" | "connected" | "reconnecting";
   selectRun: (
     runId: string,
     runKind?: "agent" | "benchmark",
-  ) => Promise<void>;
+  ) => Promise<LangGraphState | BenchmarkState | null>;
 };
 
 const RunStoreContext = createContext<RunStoreValue | null>(null);
 
 export function RunStoreProvider({ children }: { children: ReactNode }) {
-  const [snapshot, setSnapshot] = useState<LangGraphState | null>(null);
-  const [benchmarkSnapshot, setBenchmarkSnapshot] =
+  const [snapshot, setAgentSnapshot] = useState<LangGraphState | null>(null);
+  const [benchmarkSnapshot, setBenchmarkSnapshotState] =
     useState<BenchmarkState | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedRunKind, setSelectedRunKind] =
+    useState<"agent" | "benchmark" | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [registryStatus, setRegistryStatus] =
     useState<RunStoreValue["registryStatus"]>("connecting");
+
+  const setSnapshot = useCallback((state: LangGraphState | null) => {
+    setAgentSnapshot(state);
+    if (state) {
+      setBenchmarkSnapshotState(null);
+      setSelectedRunId(state.run_id);
+      setSelectedRunKind("agent");
+    } else {
+      setSelectedRunId(null);
+      setSelectedRunKind(null);
+    }
+  }, []);
+
+  const setBenchmarkSnapshot = useCallback((state: BenchmarkState | null) => {
+    setBenchmarkSnapshotState(state);
+    if (state) {
+      setAgentSnapshot(null);
+      setSelectedRunId(state.run_id);
+      setSelectedRunKind("benchmark");
+    } else {
+      setSelectedRunId(null);
+      setSelectedRunKind(null);
+    }
+  }, []);
 
   const selectRun = useCallback(async (
     runId: string,
     runKind: "agent" | "benchmark" = "agent",
   ) => {
+    const effectiveRunKind = runId.startsWith("bm-")
+      ? "benchmark"
+      : runId.startsWith("lg-")
+        ? "agent"
+        : runKind;
     try {
-      if (runKind === "benchmark") {
-        setBenchmarkSnapshot(await getBenchmarkRun(runId));
+      if (effectiveRunKind === "benchmark") {
+        const state = await getBenchmarkRun(runId);
+        setAgentSnapshot(null);
+        setBenchmarkSnapshotState(state);
+        setSelectedRunId(state.run_id);
+        setSelectedRunKind("benchmark");
+        return state;
       } else {
-        setSnapshot(await getAgentRun(runId));
+        const state = await getAgentRun(runId);
+        setBenchmarkSnapshotState(null);
+        setAgentSnapshot(state);
+        setSelectedRunId(state.run_id);
+        setSelectedRunKind("agent");
+        return state;
       }
     } catch {
       setRegistryStatus("reconnecting");
+      return null;
     }
   }, []);
 
@@ -64,6 +109,11 @@ export function RunStoreProvider({ children }: { children: ReactNode }) {
       .then(async (items) => {
         if (!active) return;
         setRuns(items);
+        const latestRun = items[0];
+        if (latestRun) {
+          setSelectedRunId((current) => current ?? latestRun.run_id);
+          setSelectedRunKind((current) => current ?? latestRun.run_kind);
+        }
         const latestAgent = items.find(
           (item) => item.run_kind !== "benchmark",
         );
@@ -72,12 +122,12 @@ export function RunStoreProvider({ children }: { children: ReactNode }) {
         );
         if (latestAgent) {
           const state = await getAgentRun(latestAgent.run_id);
-          if (active) setSnapshot((current) => current ?? state);
+          if (active) setAgentSnapshot((current) => current ?? state);
         }
         if (latestBenchmark) {
           const state = await getBenchmarkRun(latestBenchmark.run_id);
           if (active) {
-            setBenchmarkSnapshot((current) => current ?? state);
+            setBenchmarkSnapshotState((current) => current ?? state);
           }
         }
       })
@@ -112,15 +162,17 @@ export function RunStoreProvider({ children }: { children: ReactNode }) {
             )
             .slice(0, 200),
         );
+        setSelectedRunId((current) => current ?? state.run_id);
+        setSelectedRunKind((current) => current ?? (state.run_kind ?? "agent"));
         if (state.run_kind === "benchmark") {
-          setBenchmarkSnapshot((current) =>
+          setBenchmarkSnapshotState((current) =>
             current === null || current.run_id === state.run_id
               ? state
               : current,
           );
           return;
         }
-        setSnapshot((current) =>
+        setAgentSnapshot((current) =>
           current === null || current.run_id === state.run_id
             ? state
             : current,
@@ -139,14 +191,31 @@ export function RunStoreProvider({ children }: { children: ReactNode }) {
     () => ({
       snapshot,
       setSnapshot,
-      clearRun: () => setSnapshot(null),
+      clearRun: () => {
+        setAgentSnapshot(null);
+        setBenchmarkSnapshotState(null);
+        setSelectedRunId(null);
+        setSelectedRunKind(null);
+      },
       benchmarkSnapshot,
       setBenchmarkSnapshot,
+      selectedRunId,
+      selectedRunKind,
       runs,
       registryStatus,
       selectRun,
     }),
-    [benchmarkSnapshot, registryStatus, runs, selectRun, snapshot],
+    [
+      benchmarkSnapshot,
+      registryStatus,
+      runs,
+      selectRun,
+      selectedRunId,
+      selectedRunKind,
+      setBenchmarkSnapshot,
+      setSnapshot,
+      snapshot,
+    ],
   );
 
   return (

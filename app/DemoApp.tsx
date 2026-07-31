@@ -613,12 +613,12 @@ function EvaluationDashboard({
         </article>
       </div>
 
-      <article className="panel evaluation-breakdown">
+      <article className="panel evaluation-breakdown real-trace-evaluation">
         <div className="panel-heading">
           <span>真实 Aime Trace 评测集</span>
           <strong>{realReport.summary.sample_count} cases</strong>
         </div>
-        <div className="evaluation-kpis compact-kpis">
+        <div className="evaluation-kpis compact-kpis real-trace-evaluation-kpis">
           <div>
             <span>Doctor Pass Rate</span>
             <strong>{plainPercent(realReport.summary.doctor_pass_rate, 1)}</strong>
@@ -1596,6 +1596,7 @@ export default function DemoApp() {
     selectRun,
     benchmarkSnapshot,
     setBenchmarkSnapshot,
+    selectedRunId,
   } = useRunStore();
   const [view, setView] = useState<View>("overview");
   const [selectedCaseId, setSelectedCaseId] = useState(demoCases[0].id);
@@ -1671,8 +1672,18 @@ export default function DemoApp() {
   };
 
   const openRun = async (run: RunSummary) => {
-    await selectRun(run.run_id, run.run_kind);
-    goToView(run.run_kind === "benchmark" ? "evaluation" : "trace");
+    const state = await selectRun(run.run_id, run.run_kind);
+    if (state?.run_kind === "benchmark") {
+      const childRunId = state.treatment_run_id ?? state.control_run_id;
+      if (childRunId) {
+        await selectRun(childRunId, "agent");
+        goToView("trace");
+        return;
+      }
+      goToView("benchmark");
+      return;
+    }
+    goToView("trace");
   };
 
   const openChildRun = async (runId: string) => {
@@ -1682,7 +1693,7 @@ export default function DemoApp() {
 
   const openParentBenchmark = async (runId: string) => {
     await selectRun(runId, "benchmark");
-    goToView("evaluation");
+    goToView("benchmark");
   };
 
   const selectCaseForCurrentDetail = (caseId: string) => {
@@ -1812,12 +1823,7 @@ export default function DemoApp() {
                 <button
                   type="button"
                   key={run.run_id}
-                  className={
-                    snapshot?.run_id === run.run_id ||
-                    benchmarkSnapshot?.run_id === run.run_id
-                      ? "active"
-                      : ""
-                  }
+                  className={selectedRunId === run.run_id ? "active" : ""}
                   onClick={() => void openRun(run)}
                 >
                   <span>

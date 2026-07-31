@@ -79,6 +79,18 @@ SCENARIO_CATALOG: list[dict[str, Any]] = [
         "executor": "fixture",
         "repair_action": "split_non_skill",
     },
+    {
+        "id": "network-error",
+        "name": "网络异常",
+        "summary": "执行失败来自网络边界，期望归因为平台/环境问题而不是改写 Skill。",
+        "category": "platform",
+        "skill_id": "network-retry-policy",
+        "task": "调用外部 API 获取订单状态，并在网络失败时给出可恢复诊断。",
+        "expected": "网络异常被标记为外部故障，并保留重试/降级证据。",
+        "actual": "HTTP 请求超时，执行链路进入平台失败分支。",
+        "executor": "fixture",
+        "repair_action": "split_non_skill",
+    },
 ]
 
 
@@ -1514,13 +1526,23 @@ class RunService:
             pass
         return self.registry.get(run_id)
 
-    def list_runs(self, limit: int = 200) -> list[dict[str, Any]]:
-        summaries_by_id = {
-            item["run_id"]: item
-            for item in self.storage.list_run_summaries(limit)
-        }
-        for item in self.registry.list(limit):
-            summaries_by_id[item["run_id"]] = item
+    def list_runs(
+        self,
+        limit: int = 200,
+        run_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        storage_summaries = (
+            self.storage.list_benchmark_summaries(limit)
+            if run_kind == "benchmark"
+            else self.storage.list_run_summaries(limit)
+        )
+        summaries_by_id = {item["run_id"]: item for item in storage_summaries}
+        for item in self.registry.list(max(limit, 200)):
+            if run_kind is not None and item.get("run_kind") != run_kind:
+                continue
+            current = summaries_by_id.get(item["run_id"])
+            if current is None or item.get("updated_at", "") >= current.get("updated_at", ""):
+                summaries_by_id[item["run_id"]] = item
         return sorted(
             summaries_by_id.values(),
             key=lambda item: item.get("updated_at", ""),
