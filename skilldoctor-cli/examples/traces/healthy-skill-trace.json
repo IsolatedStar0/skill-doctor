@@ -1,0 +1,38 @@
+{
+  "task": "Evaluate a Skill that completed all required release checks.",
+  "skill_id": "release-checklist",
+  "skill_version": "1.0.1",
+  "skill_content": "Generate a release checklist with validation, approval, and rollback gates.",
+  "repair_enabled": false,
+  "runtime_events": [
+    {
+      "stage": "skill.load",
+      "status": "completed",
+      "message": "Skill and references loaded."
+    },
+    {
+      "stage": "skill.execute",
+      "status": "completed",
+      "message": "Checklist includes validation, approval, and rollback gates.",
+      "usage": {
+        "input_tokens": 520,
+        "output_tokens": 180
+      }
+    }
+  ],
+  "trace_metadata": {
+    "confidence": 0.92
+  },
+  "business_result": {
+    "verdict": "Release checklist is complete.",
+    "verdict_type": "pass",
+    "confidence": 0.92,
+    "details": [
+      {
+        "name": "rollback_gate",
+        "status": "pass",
+        "reason": "Rollback gate included."
+      }
+    ]
+  }
+}

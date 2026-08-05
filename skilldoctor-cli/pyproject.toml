@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skilldoctor-cli"
+version = "0.1.0"
+description = "CLI-first Skill Doctor for local trace diagnosis, quality evaluation, benchmarking, and regression comparison."
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.10,<3",
+]
+
+[project.scripts]
+skilldoctor = "skilldoctor_cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["skilldoctor_cli*"]
