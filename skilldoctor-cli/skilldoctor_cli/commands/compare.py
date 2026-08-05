@@ -17,6 +17,9 @@ def register(subcommands) -> None:
     command.add_argument("--project-root", type=Path)
     command.add_argument("--min-pass-rate-delta", type=float, default=0.0)
     command.add_argument("--max-regressed-cases", type=int, default=0)
+    command.add_argument("--max-quality-drop", type=float, default=0.0)
+    command.add_argument("--max-cost-increase-rate", type=float, default=1.0)
+    command.add_argument("--max-safety-drop", type=float, default=0.0)
     command.add_argument("--json-out", type=Path)
     command.add_argument("--md-out", type=Path)
     command.add_argument("--quiet", action="store_true")
@@ -26,14 +29,27 @@ def register(subcommands) -> None:
 def _case_map(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if report.get("state"):
         state = report["state"]
+        quality = state.get("quality") or report.get("quality") or {}
+        execution = state.get("execution") or {}
+        usage = execution.get("usage") or {}
+        case_id = state.get("case_id") or state.get("skill_id") or state.get("run_id", "single-run")
         return {
-            state.get("run_id", "single-run"): {
-                "case_id": state.get("run_id", "single-run"),
+            str(case_id): {
+                "case_id": str(case_id),
                 "passed": state.get("status") == "passed",
-                "quality_score": (state.get("quality") or report.get("quality") or {}).get("overall_score"),
+                "status": state.get("status"),
+                "quality_score": quality.get("overall_score"),
+                "quality_dimensions": quality.get("dimensions") or {},
+                "cost": _cost_from_usage(usage),
+                "duration_ms": execution.get("duration_ms"),
+                "attribution": state.get("attribution") or {},
             }
         }
     return {str(case.get("case_id")): case for case in report.get("cases") or []}
+
+
+def _cost_from_usage(usage: dict[str, Any]) -> int:
+    return int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
 
 
 def _pass_rate(report: dict[str, Any], cases: dict[str, dict[str, Any]]) -> float:
@@ -49,6 +65,110 @@ def _pass_rate(report: dict[str, Any], cases: dict[str, dict[str, Any]]) -> floa
     return sum(1 for item in cases.values() if item.get("passed")) / len(cases)
 
 
+def _quality_summary(report: dict[str, Any], cases: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    quality = report.get("quality") or (report.get("state") or {}).get("quality") or {}
+    dimensions = quality.get("dimensions") or {}
+    scores = [float(item["quality_score"]) for item in cases.values() if item.get("quality_score") is not None]
+    if not quality and not scores:
+        return {"overall": None, "dimensions": {}}
+    return {
+        "overall": quality.get("overall_score") if quality else round(sum(scores) / len(scores), 4),
+        "dimensions": dimensions,
+    }
+
+
+def _cost_summary(report: dict[str, Any], cases: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    state = report.get("state") or {}
+    execution = state.get("execution") or {}
+    usage = execution.get("usage") or {}
+    if usage or execution.get("duration_ms") is not None:
+        return {
+            "tokens": _cost_from_usage(usage),
+            "duration_ms": int(execution.get("duration_ms") or 0),
+        }
+    tokens = [int(item.get("cost") or 0) for item in cases.values() if item.get("cost") is not None]
+    durations = [int(item.get("duration_ms") or 0) for item in cases.values() if item.get("duration_ms") is not None]
+    return {
+        "tokens": sum(tokens) if tokens else None,
+        "duration_ms": sum(durations) if durations else None,
+    }
+
+
+def _rate_delta(old: float | int | None, new: float | int | None) -> float | None:
+    if old is None or new is None:
+        return None
+    if float(old) == 0:
+        return None if float(new) == 0 else 1.0
+    return (float(new) - float(old)) / float(old)
+
+
+def _safety_score(report: dict[str, Any]) -> float | None:
+    quality = report.get("quality") or (report.get("state") or {}).get("quality") or {}
+    dimensions = quality.get("dimensions") or {}
+    if "safety_boundary" in dimensions:
+        return float(dimensions["safety_boundary"])
+    return None
+
+
+def _case_diff(
+    old_cases: dict[str, dict[str, Any]],
+    new_cases: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    old_ids = set(old_cases)
+    new_ids = set(new_cases)
+    common_ids = sorted(old_ids & new_ids)
+    added = sorted(new_ids - old_ids)
+    removed = sorted(old_ids - new_ids)
+    fixed = [case_id for case_id in common_ids if not old_cases[case_id].get("passed") and new_cases[case_id].get("passed")]
+    regressed = [case_id for case_id in common_ids if old_cases[case_id].get("passed") and not new_cases[case_id].get("passed")]
+    persistent_failures = [
+        case_id for case_id in common_ids if not old_cases[case_id].get("passed") and not new_cases[case_id].get("passed")
+    ]
+    new_failures = [case_id for case_id in added if not new_cases[case_id].get("passed")]
+    new_skill_failures = [
+        case_id
+        for case_id in new_failures
+        if (new_cases[case_id].get("attribution") or {}).get("cause") == "skill"
+    ]
+    case_rows = []
+    for case_id in sorted(old_ids | new_ids):
+        old_case = old_cases.get(case_id)
+        new_case = new_cases.get(case_id)
+        if old_case and new_case:
+            if old_case.get("passed") and not new_case.get("passed"):
+                status = "regressed"
+            elif not old_case.get("passed") and new_case.get("passed"):
+                status = "fixed"
+            elif not old_case.get("passed") and not new_case.get("passed"):
+                status = "persistent_failure"
+            else:
+                status = "unchanged_pass"
+        elif new_case:
+            status = "new_failure" if not new_case.get("passed") else "new_pass"
+        else:
+            status = "removed"
+        case_rows.append(
+            {
+                "case_id": case_id,
+                "status": status,
+                "old_passed": old_case.get("passed") if old_case else None,
+                "new_passed": new_case.get("passed") if new_case else None,
+                "category": (new_case or old_case or {}).get("category"),
+                "cause": ((new_case or old_case or {}).get("attribution") or {}).get("cause"),
+            }
+        )
+    return {
+        "added_cases": added,
+        "removed_cases": removed,
+        "fixed_cases": fixed,
+        "regressed_cases": regressed,
+        "persistent_failures": persistent_failures,
+        "new_failures": new_failures,
+        "new_skill_failures": new_skill_failures,
+        "case_rows": case_rows,
+    }
+
+
 def handle(args: Namespace) -> int:
     old_report = load_json(args.old_report)
     new_report = load_json(args.new_report)
@@ -56,18 +176,48 @@ def handle(args: Namespace) -> int:
     new_cases = _case_map(new_report)
     old_pass_rate = _pass_rate(old_report, old_cases)
     new_pass_rate = _pass_rate(new_report, new_cases)
-    common_ids = sorted(set(old_cases) & set(new_cases))
-    fixed = [case_id for case_id in common_ids if not old_cases[case_id].get("passed") and new_cases[case_id].get("passed")]
-    regressed = [case_id for case_id in common_ids if old_cases[case_id].get("passed") and not new_cases[case_id].get("passed")]
+    case_diff = _case_diff(old_cases, new_cases)
     pass_rate_delta = new_pass_rate - old_pass_rate
+    old_quality = _quality_summary(old_report, old_cases)
+    new_quality = _quality_summary(new_report, new_cases)
+    quality_delta = None
+    if old_quality["overall"] is not None and new_quality["overall"] is not None:
+        quality_delta = float(new_quality["overall"]) - float(old_quality["overall"])
+    old_cost = _cost_summary(old_report, old_cases)
+    new_cost = _cost_summary(new_report, new_cases)
+    token_increase_rate = _rate_delta(old_cost.get("tokens"), new_cost.get("tokens"))
+    duration_increase_rate = _rate_delta(old_cost.get("duration_ms"), new_cost.get("duration_ms"))
+    safety_delta = None
+    old_safety = _safety_score(old_report)
+    new_safety = _safety_score(new_report)
+    if old_safety is not None and new_safety is not None:
+        safety_delta = new_safety - old_safety
     reasons: list[str] = []
     if pass_rate_delta < args.min_pass_rate_delta:
         reasons.append(
             f"pass_rate_delta {pass_rate_delta:.4f} below required {args.min_pass_rate_delta:.4f}."
         )
-    if len(regressed) > args.max_regressed_cases:
+    if len(case_diff["regressed_cases"]) > args.max_regressed_cases:
         reasons.append(
-            f"regressed_cases {len(regressed)} exceeds allowed {args.max_regressed_cases}."
+            f"regressed_cases {len(case_diff['regressed_cases'])} exceeds allowed {args.max_regressed_cases}."
+        )
+    if case_diff["new_skill_failures"]:
+        reasons.append(f"new_skill_failures detected: {', '.join(case_diff['new_skill_failures'])}.")
+    if quality_delta is not None and quality_delta < -args.max_quality_drop:
+        reasons.append(
+            f"quality_delta {quality_delta:.4f} below allowed drop {-args.max_quality_drop:.4f}."
+        )
+    if token_increase_rate is not None and token_increase_rate > args.max_cost_increase_rate:
+        reasons.append(
+            f"token_increase_rate {token_increase_rate:.4f} exceeds allowed {args.max_cost_increase_rate:.4f}."
+        )
+    if duration_increase_rate is not None and duration_increase_rate > args.max_cost_increase_rate:
+        reasons.append(
+            f"duration_increase_rate {duration_increase_rate:.4f} exceeds allowed {args.max_cost_increase_rate:.4f}."
+        )
+    if safety_delta is not None and safety_delta < -args.max_safety_drop:
+        reasons.append(
+            f"safety_boundary_delta {safety_delta:.4f} below allowed drop {-args.max_safety_drop:.4f}."
         )
     if not reasons:
         reasons.append("New report satisfies pass-rate and regression gates.")
@@ -80,12 +230,22 @@ def handle(args: Namespace) -> int:
         "new": {"path": str(Path(args.new_report).expanduser()), "pass_rate": new_pass_rate, "case_count": len(new_cases)},
         "delta": {
             "pass_rate_delta": pass_rate_delta,
-            "fixed_cases": fixed,
-            "regressed_cases": regressed,
+            "fixed_cases": case_diff["fixed_cases"],
+            "regressed_cases": case_diff["regressed_cases"],
+            "quality_delta": quality_delta,
+            "safety_boundary_delta": safety_delta,
+            "token_increase_rate": token_increase_rate,
+            "duration_increase_rate": duration_increase_rate,
         },
+        "case_diff": case_diff,
+        "quality": {"old": old_quality, "new": new_quality},
+        "cost": {"old": old_cost, "new": new_cost},
         "policy": {
             "min_pass_rate_delta": args.min_pass_rate_delta,
             "max_regressed_cases": args.max_regressed_cases,
+            "max_quality_drop": args.max_quality_drop,
+            "max_cost_increase_rate": args.max_cost_increase_rate,
+            "max_safety_drop": args.max_safety_drop,
         },
         "reasons": reasons,
     }

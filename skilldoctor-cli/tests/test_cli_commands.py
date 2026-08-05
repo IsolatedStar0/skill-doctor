@@ -469,7 +469,11 @@ def test_compare_detects_regressed_case_and_writes_markdown(tmp_path: Path) -> N
         {
             "kind": "bench",
             "summary": {"pass_rate": 1.0},
-            "cases": [{"case_id": "case-1", "passed": True}],
+            "cases": [
+                {"case_id": "case-1", "passed": True},
+                {"case_id": "case-fixed", "passed": False},
+                {"case_id": "case-persistent", "passed": False},
+            ],
         },
     )
     new_report = _write_json(
@@ -477,7 +481,11 @@ def test_compare_detects_regressed_case_and_writes_markdown(tmp_path: Path) -> N
         {
             "kind": "bench",
             "summary": {"pass_rate": 0.0},
-            "cases": [{"case_id": "case-1", "passed": False}],
+            "cases": [
+                {"case_id": "case-1", "passed": False, "category": "skill"},
+                {"case_id": "case-fixed", "passed": True, "category": "healthy"},
+                {"case_id": "case-persistent", "passed": False, "category": "skill"},
+            ],
         },
     )
     json_out = tmp_path / "compare.json"
@@ -502,7 +510,100 @@ def test_compare_detects_regressed_case_and_writes_markdown(tmp_path: Path) -> N
     report = json.loads(json_out.read_text(encoding="utf-8"))
     assert report["decision"] == "REJECT"
     assert report["delta"]["regressed_cases"] == ["case-1"]
-    assert "Regressed Cases" in md_out.read_text(encoding="utf-8")
+    assert report["case_diff"]["fixed_cases"] == ["case-fixed"]
+    assert report["case_diff"]["persistent_failures"] == ["case-persistent"]
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Case Diff" in markdown
+    assert "Regressed Cases" in markdown
+    assert "Fixed Cases" in markdown
+    assert "Persistent Failures" in markdown
+
+
+def test_compare_rejects_new_skill_failure_and_quality_cost_safety_regression(
+    tmp_path: Path,
+) -> None:
+    old_report = _write_json(
+        tmp_path / "old-evaluate.json",
+        {
+            "kind": "evaluate",
+            "quality": {
+                "overall_score": 0.95,
+                "dimensions": {"safety_boundary": 0.95, "evidence_support": 0.9},
+            },
+            "state": {
+                "run_id": "old-run",
+                "case_id": "skill-a",
+                "status": "passed",
+                "skill_id": "skill-a",
+                "execution": {
+                    "passed": True,
+                    "pass_rate": 1.0,
+                    "duration_ms": 1000,
+                    "usage": {"input_tokens": 100, "output_tokens": 100},
+                },
+            },
+        },
+    )
+    new_report = _write_json(
+        tmp_path / "new-evaluate.json",
+        {
+            "kind": "evaluate",
+            "quality": {
+                "overall_score": 0.70,
+                "dimensions": {"safety_boundary": 0.60, "evidence_support": 0.7},
+            },
+            "state": {
+                "run_id": "new-run",
+                "case_id": "skill-a",
+                "status": "failed",
+                "skill_id": "skill-a",
+                "attribution": {"cause": "skill"},
+                "execution": {
+                    "passed": False,
+                    "pass_rate": 0.0,
+                    "duration_ms": 5000,
+                    "usage": {"input_tokens": 700, "output_tokens": 500},
+                },
+            },
+        },
+    )
+    json_out = tmp_path / "compare.json"
+    md_out = tmp_path / "compare.md"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "compare",
+            str(old_report),
+            str(new_report),
+            "--max-quality-drop",
+            "0.1",
+            "--max-cost-increase-rate",
+            "1.0",
+            "--max-safety-drop",
+            "0.1",
+            "--json-out",
+            str(json_out),
+            "--md-out",
+            str(md_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 40
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["delta"]["quality_delta"] == -0.25
+    assert report["delta"]["safety_boundary_delta"] == -0.35
+    assert report["delta"]["token_increase_rate"] == 5.0
+    assert report["delta"]["duration_increase_rate"] == 4.0
+    assert report["case_diff"]["regressed_cases"] == ["skill-a"]
+    assert any("quality_delta" in reason for reason in report["reasons"])
+    assert any("token_increase_rate" in reason for reason in report["reasons"])
+    assert any("safety_boundary_delta" in reason for reason in report["reasons"])
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Quality Diff" in markdown
+    assert "Cost Diff" in markdown
 
 
 def test_report_renders_existing_json_report(tmp_path: Path, capsys) -> None:

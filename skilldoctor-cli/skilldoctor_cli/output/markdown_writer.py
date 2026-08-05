@@ -136,6 +136,9 @@ def markdown_for_suite(report: dict[str, Any]) -> str:
 
 
 def markdown_for_compare(report: dict[str, Any]) -> str:
+    case_diff = report.get("case_diff") or {}
+    quality = report.get("quality") or {}
+    cost = report.get("cost") or {}
     lines = [
         "# Skill Doctor Compare",
         "",
@@ -143,14 +146,78 @@ def markdown_for_compare(report: dict[str, Any]) -> str:
         f"- Old pass rate: {_percent(report.get('old', {}).get('pass_rate'))}",
         f"- New pass rate: {_percent(report.get('new', {}).get('pass_rate'))}",
         f"- Delta: {_percent(report.get('delta', {}).get('pass_rate_delta'))}",
+        f"- Quality delta: `{report.get('delta', {}).get('quality_delta')}`",
+        f"- Safety delta: `{report.get('delta', {}).get('safety_boundary_delta')}`",
         "",
         "## Reasons",
     ]
     lines.extend(f"- {reason}" for reason in report.get("reasons", []))
-    regressed = report.get("delta", {}).get("regressed_cases") or []
+    if quality:
+        lines.extend(
+            [
+                "",
+                "## Quality Diff",
+                "",
+                "| Metric | Old | New | Delta |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        old_overall = (quality.get("old") or {}).get("overall")
+        new_overall = (quality.get("new") or {}).get("overall")
+        delta = report.get("delta", {}).get("quality_delta")
+        lines.append(f"| overall | {old_overall} | {new_overall} | {delta} |")
+        old_dimensions = (quality.get("old") or {}).get("dimensions") or {}
+        new_dimensions = (quality.get("new") or {}).get("dimensions") or {}
+        for name in sorted(set(old_dimensions) | set(new_dimensions)):
+            old_value = old_dimensions.get(name)
+            new_value = new_dimensions.get(name)
+            dim_delta = None
+            if old_value is not None and new_value is not None:
+                dim_delta = round(float(new_value) - float(old_value), 4)
+            lines.append(f"| {name} | {old_value} | {new_value} | {dim_delta} |")
+    if cost:
+        lines.extend(
+            [
+                "",
+                "## Cost Diff",
+                "",
+                "| Metric | Old | New | Rate Delta |",
+                "| --- | ---: | ---: | ---: |",
+                f"| tokens | {(cost.get('old') or {}).get('tokens')} | {(cost.get('new') or {}).get('tokens')} | {report.get('delta', {}).get('token_increase_rate')} |",
+                f"| duration_ms | {(cost.get('old') or {}).get('duration_ms')} | {(cost.get('new') or {}).get('duration_ms')} | {report.get('delta', {}).get('duration_increase_rate')} |",
+            ]
+        )
+    rows = case_diff.get("case_rows") or []
+    if rows:
+        lines.extend(
+            [
+                "",
+                "## Case Diff",
+                "",
+                "| Case | Status | Old | New | Category | Cause |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for item in rows:
+            lines.append(
+                f"| `{item.get('case_id')}` | {item.get('status')} | {item.get('old_passed')} | {item.get('new_passed')} | {item.get('category')} | {item.get('cause')} |"
+            )
+    regressed = case_diff.get("regressed_cases") or report.get("delta", {}).get("regressed_cases") or []
     if regressed:
         lines.extend(["", "## Regressed Cases"])
         lines.extend(f"- `{case_id}`" for case_id in regressed)
+    new_failures = case_diff.get("new_failures") or []
+    if new_failures:
+        lines.extend(["", "## New Failures"])
+        lines.extend(f"- `{case_id}`" for case_id in new_failures)
+    fixed = case_diff.get("fixed_cases") or []
+    if fixed:
+        lines.extend(["", "## Fixed Cases"])
+        lines.extend(f"- `{case_id}`" for case_id in fixed)
+    persistent = case_diff.get("persistent_failures") or []
+    if persistent:
+        lines.extend(["", "## Persistent Failures"])
+        lines.extend(f"- `{case_id}`" for case_id in persistent)
     return "\n".join(lines).strip() + "\n"
 
 
