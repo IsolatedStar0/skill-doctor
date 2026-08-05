@@ -136,6 +136,81 @@ def test_evaluate_returns_quality_gate_code_when_score_is_low(
     assert report["kind"] == "evaluate"
     assert report["quality"]["overall_score"] < 0.95
     assert "output_quality" in report["quality"]["dimensions"]
+    assert report["quality_gate"]["passed"] is False
+    assert report["quality_gate"]["failures"][0]["name"] == "overall_score"
+    assert "score_breakdown" in report["quality"]
+    assert report["quality"]["reasons"]["output_quality"]
+    assert report["quality"]["evidence_refs"] == [
+        "assertion:a:fail",
+        "assertion:b:pass",
+    ]
+
+
+def test_evaluate_can_gate_on_dimension_threshold_and_render_reasons(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "weak-evidence-trace.json", {"skill_id": "demo"})
+    json_out = tmp_path / "evaluate.json"
+    md_out = tmp_path / "evaluate.md"
+    state = {
+        "run_id": "lg-test-weak-evidence",
+        "status": "passed",
+        "skill_id": "demo",
+        "skill_version": "1.0.0",
+        "execution": {
+            "passed": True,
+            "pass_rate": 1.0,
+            "duration_ms": 1_000,
+            "assertions": [{"id": "runtime-events-clean", "passed": True}],
+            "runtime_events": [
+                {"stage": "skill.execute", "status": "completed"},
+            ],
+        },
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.50",
+            "--min-evidence-support",
+            "0.90",
+            "--json-out",
+            str(json_out),
+            "--md-out",
+            str(md_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 20
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["dimension_thresholds"] == {"evidence_support": 0.9}
+    assert report["quality_gate"]["failures"] == [
+        {
+            "name": "evidence_support",
+            "expected": 0.9,
+            "actual": report["quality"]["dimensions"]["evidence_support"],
+            "message": f"evidence_support {report['quality']['dimensions']['evidence_support']:.4f} is below required 0.9000.",
+        }
+    ]
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Score Breakdown" in markdown
+    assert "Dimension Reasons" in markdown
+    assert "Quality Gate" in markdown
 
 
 def test_bench_loads_jsonl_skips_comments_and_returns_failure_code(

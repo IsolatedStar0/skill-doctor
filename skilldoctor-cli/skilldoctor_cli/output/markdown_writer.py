@@ -50,9 +50,46 @@ def markdown_for_run(report: dict[str, Any]) -> str:
         )
         for name, score in (quality.get("dimensions") or {}).items():
             lines.append(f"| {name} | {score} |")
+        if quality.get("score_breakdown"):
+            lines.extend(
+                [
+                    "",
+                    "### Score Breakdown",
+                    "",
+                    "| Dimension | Score | Weight | Weighted |",
+                    "| --- | ---: | ---: | ---: |",
+                ]
+            )
+            for name, item in quality["score_breakdown"].items():
+                lines.append(
+                    f"| {name} | {item.get('score')} | {item.get('weight')} | {item.get('weighted_score')} |"
+                )
+        if quality.get("reasons"):
+            lines.extend(["", "### Dimension Reasons"])
+            for name, reasons in quality["reasons"].items():
+                if not reasons:
+                    continue
+                lines.append(f"- `{name}`")
+                lines.extend(f"  - {reason}" for reason in reasons)
+        if quality.get("evidence_refs"):
+            lines.extend(["", "### Evidence References"])
+            lines.extend(f"- `{item}`" for item in quality["evidence_refs"][:20])
         if quality.get("findings"):
             lines.extend(["", "### Findings"])
             lines.extend(f"- {item}" for item in quality["findings"])
+    quality_gate = report.get("quality_gate") or {}
+    if quality_gate:
+        lines.extend(
+            [
+                "",
+                "## Quality Gate",
+                f"- Passed: `{quality_gate.get('passed')}`",
+            ]
+        )
+        failures = quality_gate.get("failures") or []
+        if failures:
+            lines.extend(["", "### Gate Failures"])
+            lines.extend(f"- {item.get('message')}" for item in failures)
     return "\n".join(lines).strip() + "\n"
 
 
