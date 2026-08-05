@@ -95,7 +95,16 @@ def markdown_for_run(report: dict[str, Any]) -> str:
 
 def markdown_for_suite(report: dict[str, Any]) -> str:
     if report.get("markdown"):
-        return str(report["markdown"]).rstrip() + "\n"
+        lines = [str(report["markdown"]).rstrip()]
+        case_set = report.get("case_set") or {}
+        skipped = case_set.get("skipped") or []
+        if skipped:
+            lines.extend(["", "## Skipped Cases"])
+            lines.extend(
+                f"- `{item.get('case_id')}`: {item.get('reason')}"
+                for item in skipped
+            )
+        return "\n".join(lines).strip() + "\n"
     summary = report.get("summary") or {}
     lines = [
         f"# {report.get('name', 'Skill Doctor Suite')}",
@@ -104,14 +113,24 @@ def markdown_for_suite(report: dict[str, Any]) -> str:
         f"- Total: `{summary.get('total', 0)}`",
         f"- Passed: `{summary.get('passed', 0)}`",
         f"- Failed: `{summary.get('failed', 0)}`",
+        f"- Skipped: `{summary.get('skipped', 0)}`",
+        f"- Flaky included: `{summary.get('flaky', 0)}`",
         f"- Pass rate: {_percent(summary.get('pass_rate'))}",
         "",
-        "| Case | Result | Category |",
-        "| --- | --- | --- |",
+        "| Case | Result | Category | Tags | Flaky |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for case in report.get("cases") or []:
+        tags = ", ".join(case.get("tags") or [])
         lines.append(
-            f"| `{case.get('case_id')}` | {'PASS' if case.get('passed') else 'FAIL'} | {case.get('category', '')} |"
+            f"| `{case.get('case_id')}` | {'PASS' if case.get('passed') else 'FAIL'} | {case.get('category', '')} | {tags} | {case.get('flaky', False)} |"
+        )
+    skipped = (report.get("case_set") or {}).get("skipped") or []
+    if skipped:
+        lines.extend(["", "## Skipped Cases"])
+        lines.extend(
+            f"- `{item.get('case_id')}`: {item.get('reason')}"
+            for item in skipped
         )
     return "\n".join(lines).strip() + "\n"
 
