@@ -47,8 +47,10 @@ next-env.d.ts
 /dev.stderr.log
 /benchmarks/cache/*.jsonl
 /reports/codex-smoke/*.json
+/reports/cli/
 /reports/paired/
 /reports/langgraph/
+/.skilldoctor/runs/
 __pycache__/
 *.py[cod]
 /.pytest_cache/

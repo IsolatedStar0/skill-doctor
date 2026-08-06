@@ -63,9 +63,24 @@ def dump_json(data: Any, path: str | Path) -> Path:
     return target
 
 
+def run_records_dir(project_root: Path) -> Path:
+    """Return the unified local directory for CLI execution records.
+
+    Runtime outputs are intentionally kept under ``.skilldoctor/runs`` instead
+    of ``reports/`` so generated records have one predictable, gitignored home.
+    Operators can override the location with ``SKILL_DOCTOR_RUNS_DIR`` when an
+    agent platform wants all artifacts under its own workspace.
+    """
+
+    override = os.getenv("SKILL_DOCTOR_RUNS_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    return project_root / ".skilldoctor" / "runs"
+
+
 def default_report_path(project_root: Path, prefix: str, suffix: str = "json") -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return project_root / "reports" / "cli" / f"{prefix}-{stamp}.{suffix}"
+    return run_records_dir(project_root) / f"{prefix}-{stamp}.{suffix}"
 
 
 def baseline_reports_dir(project_root: Path) -> Path:

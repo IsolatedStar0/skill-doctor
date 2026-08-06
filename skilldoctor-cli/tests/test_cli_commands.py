@@ -16,6 +16,7 @@ from skilldoctor_cli.exit_codes import (
     EXIT_OK,
     EXIT_QUALITY_GATE_FAILED,
 )
+from skilldoctor_cli.workspace import default_report_path, run_records_dir
 
 
 def test_exit_codes_are_stable_for_platform_integrations() -> None:
@@ -35,6 +36,31 @@ def test_exit_codes_are_stable_for_platform_integrations() -> None:
         EXIT_COMPARE_REJECTED: "compare_rejected",
         EXIT_INTERRUPTED: "interrupted",
     }
+
+
+def test_default_reports_are_saved_under_unified_run_records_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("SKILL_DOCTOR_RUNS_DIR", raising=False)
+
+    report_path = default_report_path(tmp_path, "ingest-aime")
+
+    assert run_records_dir(tmp_path) == tmp_path / ".skilldoctor" / "runs"
+    assert report_path.parent == tmp_path / ".skilldoctor" / "runs"
+    assert report_path.name.startswith("ingest-aime-")
+    assert report_path.suffix == ".json"
+
+
+def test_run_records_dir_can_be_overridden_for_agent_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    artifact_dir = tmp_path / "aime-artifacts" / "skilldoctor-runs"
+    monkeypatch.setenv("SKILL_DOCTOR_RUNS_DIR", str(artifact_dir))
+
+    assert run_records_dir(tmp_path) == artifact_dir.resolve()
+    assert default_report_path(tmp_path, "diagnose", suffix="md").parent == artifact_dir.resolve()
 
 
 class _TraceRequest:
