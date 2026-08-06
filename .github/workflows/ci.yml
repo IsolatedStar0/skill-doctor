@@ -68,6 +68,12 @@ jobs:
             --project-root "$PWD" \
             evaluate skilldoctor-cli/examples/traces/healthy-skill-trace.json \
             --min-score 0.60 \
+            --min-output-quality 0.90 \
+            --min-contract-compliance 0.90 \
+            --min-evidence-support 0.50 \
+            --min-cost-efficiency 0.90 \
+            --min-safety-boundary 0.80 \
+            --min-stability 0.90 \
             --json-out .pytest-tmp-cli-smoke/evaluate.json \
             --md-out .pytest-tmp-cli-smoke/evaluate.md \
             --quiet
@@ -75,6 +81,7 @@ jobs:
           skilldoctor \
             --project-root "$PWD" \
             bench skilldoctor-cli/examples/cases/release-checklist.jsonl \
+            --include-tag release \
             --json-out .pytest-tmp-cli-smoke/bench.json \
             --md-out .pytest-tmp-cli-smoke/bench.md \
             --quiet
@@ -82,8 +89,19 @@ jobs:
           skilldoctor \
             --project-root "$PWD" \
             compare .pytest-tmp-cli-smoke/bench.json .pytest-tmp-cli-smoke/bench.json \
+            --max-quality-drop 0.05 \
+            --max-cost-increase-rate 1.00 \
+            --max-safety-drop 0.05 \
             --json-out .pytest-tmp-cli-smoke/compare.json \
             --md-out .pytest-tmp-cli-smoke/compare.md \
+            --quiet
+
+          skilldoctor \
+            --project-root "$PWD" \
+            compare \
+            --baseline .pytest-tmp-cli-smoke/bench.json \
+            .pytest-tmp-cli-smoke/bench.json \
+            --json-out .pytest-tmp-cli-smoke/compare-baseline.json \
             --quiet
 
           skilldoctor \

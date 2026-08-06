@@ -4,12 +4,59 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
 from ..backend import backend_modules, new_run_service
 from ..output.console import print_suite_summary
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
 from ..quality import score_state
 from ..workspace import default_report_path, load_jsonl, utc_now
+
+
+ALLOWED_REGRESSION_RISKS = {"low", "medium", "high"}
+
+
+class CaseSetMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    case_id: str = Field(min_length=1)
+    tags: str | list[str] = Field(default_factory=list)
+    flaky: bool = False
+    regression_risk: str | None = None
+    regressionRisk: str | None = None
+
+    @field_validator("case_id")
+    @classmethod
+    def case_id_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("case_id must be a non-empty string")
+        return value
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def tags_must_be_strings(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return value
+        raise ValueError("tags must be a string or a list of strings")
+
+    @field_validator("flaky", mode="before")
+    @classmethod
+    def flaky_must_be_bool(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            return value
+        raise ValueError("flaky must be a boolean")
+
+    @field_validator("regression_risk", "regressionRisk")
+    @classmethod
+    def regression_risk_must_be_known(cls, value: str | None) -> str | None:
+        if value is not None and value not in ALLOWED_REGRESSION_RISKS:
+            raise ValueError("regression_risk must be one of: high, low, medium")
+        return value
 
 
 def register(subcommands) -> None:
@@ -48,6 +95,35 @@ def _as_case(modules: dict[str, Any], payload: dict[str, Any], index: int):
 
 def _case_id(payload: dict[str, Any], index: int) -> str:
     return str(payload.get("case_id") or f"cli-case-{index:03d}")
+
+
+def _validate_case_payload(payload: Any, index: int) -> list[str]:
+    if not isinstance(payload, dict):
+        return [f"case[{index}] must be a JSON object."]
+    try:
+        CaseSetMetadata.model_validate(payload)
+        return []
+    except ValidationError as error:
+        fields = {str(item["loc"][0]) for item in error.errors() if item.get("loc")}
+        messages: list[str] = []
+        if "case_id" in fields:
+            messages.append(f"case[{index}].case_id must be a non-empty string.")
+        if "tags" in fields:
+            messages.append(f"case[{index}].tags must be a string or a list of strings.")
+        if "flaky" in fields:
+            messages.append(f"case[{index}].flaky must be a boolean.")
+        if "regression_risk" in fields or "regressionRisk" in fields:
+            messages.append(f"case[{index}].regression_risk must be one of: high, low, medium.")
+        return messages
+
+
+def _validate_case_set(payloads: list[Any]) -> None:
+    errors: list[str] = []
+    for index, payload in enumerate(payloads, start=1):
+        errors.extend(_validate_case_payload(payload, index))
+    if errors:
+        details = "\n".join(f"- {item}" for item in errors)
+        raise ValueError(f"invalid bench case set:\n{details}")
 
 
 def _case_metadata(payload: dict[str, Any], index: int) -> dict[str, Any]:
@@ -185,8 +261,9 @@ def _run_fail_fast_suite(
 
 
 def handle(args: Namespace) -> int:
-    modules = backend_modules(args.project_root)
     payloads = load_jsonl(args.cases)
+    _validate_case_set(payloads)
+    modules = backend_modules(args.project_root)
     selected, skipped = _filter_payloads(
         payloads,
         include_tags=args.include_tag,

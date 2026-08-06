@@ -463,6 +463,43 @@ def test_bench_fail_fast_stops_after_first_failure(
     assert report["cases"][0]["tags"] == ["release"]
 
 
+def test_bench_rejects_malformed_case_metadata(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    cases_path = tmp_path / "cases.jsonl"
+    payloads = [
+        {
+            "case_id": "",
+            "name": "missing case id",
+            "tags": ["release", 1],
+            "flaky": "false",
+            "regression_risk": "critical",
+            "trace": {"skill_id": "demo", "execution": {"passed": True}},
+            "expectation": {"status": "passed"},
+        }
+    ]
+    cases_path.write_text("\n".join(json.dumps(item) for item in payloads), encoding="utf-8")
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "bench",
+            str(cases_path),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 1
+    error = capsys.readouterr().err
+    assert "invalid bench case set" in error
+    assert "case[1].case_id must be a non-empty string" in error
+    assert "case[1].tags must be a string or a list of strings" in error
+    assert "case[1].flaky must be a boolean" in error
+    assert "case[1].regression_risk must be one of: high, low, medium" in error
+
+
 def test_compare_detects_regressed_case_and_writes_markdown(tmp_path: Path) -> None:
     old_report = _write_json(
         tmp_path / "old.json",
@@ -598,12 +635,83 @@ def test_compare_rejects_new_skill_failure_and_quality_cost_safety_regression(
     assert report["delta"]["token_increase_rate"] == 5.0
     assert report["delta"]["duration_increase_rate"] == 4.0
     assert report["case_diff"]["regressed_cases"] == ["skill-a"]
+    assert report["gate_summary"] == {
+        "passed": False,
+        "failure_count": 6,
+        "regressed_case_count": 1,
+        "new_failure_count": 0,
+        "new_skill_failure_count": 0,
+        "quality_delta": -0.25,
+        "safety_boundary_delta": -0.35,
+        "token_increase_rate": 5.0,
+        "duration_increase_rate": 4.0,
+    }
+    assert [item["name"] for item in report["gate_failures"]] == [
+        "pass_rate_delta",
+        "regressed_cases",
+        "quality_delta",
+        "token_increase_rate",
+        "duration_increase_rate",
+        "safety_boundary_delta",
+    ]
+    assert report["blocking_regressions"] == {
+        "regressed_cases": ["skill-a"],
+        "new_skill_failures": [],
+    }
     assert any("quality_delta" in reason for reason in report["reasons"])
     assert any("token_increase_rate" in reason for reason in report["reasons"])
     assert any("safety_boundary_delta" in reason for reason in report["reasons"])
     markdown = md_out.read_text(encoding="utf-8")
+    assert "CI Gate Summary" in markdown
+    assert "CI Gate Failures" in markdown
     assert "Quality Diff" in markdown
     assert "Cost Diff" in markdown
+
+
+def test_compare_accepts_explicit_baseline_path(tmp_path: Path) -> None:
+    baseline_report = _write_json(
+        tmp_path / "baseline.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    new_report = _write_json(
+        tmp_path / "new.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    json_out = tmp_path / "compare.json"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "compare",
+            "--baseline",
+            str(baseline_report),
+            str(new_report),
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["decision"] == "ADOPT"
+    assert report["old"]["path"] == str(baseline_report)
+    assert report["new"]["path"] == str(new_report)
+    assert report["baseline"] == {
+        "enabled": True,
+        "path": str(baseline_report),
+        "source": "explicit",
+    }
+    assert report["gate_summary"]["passed"] is True
 
 
 def test_report_renders_existing_json_report(tmp_path: Path, capsys) -> None:

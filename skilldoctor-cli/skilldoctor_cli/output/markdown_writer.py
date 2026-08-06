@@ -152,6 +152,34 @@ def markdown_for_compare(report: dict[str, Any]) -> str:
         "## Reasons",
     ]
     lines.extend(f"- {reason}" for reason in report.get("reasons", []))
+    gate_summary = report.get("gate_summary") or {}
+    if gate_summary:
+        lines.extend(
+            [
+                "",
+                "## CI Gate Summary",
+                "",
+                f"- Passed: `{gate_summary.get('passed')}`",
+                f"- Failure count: `{gate_summary.get('failure_count')}`",
+                f"- Regressed cases: `{gate_summary.get('regressed_case_count')}`",
+                f"- New skill failures: `{gate_summary.get('new_skill_failure_count')}`",
+            ]
+        )
+    gate_failures = report.get("gate_failures") or []
+    if gate_failures:
+        lines.extend(
+            [
+                "",
+                "## CI Gate Failures",
+                "",
+                "| Gate | Actual | Expected | Message |",
+                "| --- | ---: | ---: | --- |",
+            ]
+        )
+        for item in gate_failures:
+            lines.append(
+                f"| {item.get('name')} | {item.get('actual')} | {item.get('expected')} | {item.get('message')} |"
+            )
     if quality:
         lines.extend(
             [

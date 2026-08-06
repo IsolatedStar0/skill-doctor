@@ -12,9 +12,10 @@ from ..workspace import default_report_path, load_json, utc_now
 
 def register(subcommands) -> None:
     command = subcommands.add_parser("compare", help="Compare old/new bench or evaluation reports for regressions.")
-    command.add_argument("old_report", help="Old JSON report path.")
-    command.add_argument("new_report", help="New JSON report path.")
+    command.add_argument("old_report", help="Old JSON report path, or new report path when --baseline is set.")
+    command.add_argument("new_report", nargs="?", help="New JSON report path.")
     command.add_argument("--project-root", type=Path)
+    command.add_argument("--baseline", type=Path, help="Baseline JSON report path used as the old report.")
     command.add_argument("--min-pass-rate-delta", type=float, default=0.0)
     command.add_argument("--max-regressed-cases", type=int, default=0)
     command.add_argument("--max-quality-drop", type=float, default=0.0)
@@ -169,9 +170,40 @@ def _case_diff(
     }
 
 
+def _gate_failure(name: str, message: str, *, actual: Any, expected: Any) -> dict[str, Any]:
+    return {
+        "name": name,
+        "severity": "blocking",
+        "actual": actual,
+        "expected": expected,
+        "message": message,
+    }
+
+
+def _resolve_report_paths(args: Namespace) -> tuple[Path, Path, dict[str, Any]]:
+    if args.baseline:
+        return (
+            args.baseline,
+            Path(args.new_report or args.old_report),
+            {
+                "enabled": True,
+                "path": str(Path(args.baseline).expanduser()),
+                "source": "explicit",
+            },
+        )
+    if not args.new_report:
+        raise SystemExit("compare requires old_report and new_report, or --baseline with a new report.")
+    return (
+        Path(args.old_report),
+        Path(args.new_report),
+        {"enabled": False, "path": None, "source": None},
+    )
+
+
 def handle(args: Namespace) -> int:
-    old_report = load_json(args.old_report)
-    new_report = load_json(args.new_report)
+    old_report_path, new_report_path, baseline = _resolve_report_paths(args)
+    old_report = load_json(old_report_path)
+    new_report = load_json(new_report_path)
     old_cases = _case_map(old_report)
     new_cases = _case_map(new_report)
     old_pass_rate = _pass_rate(old_report, old_cases)
@@ -193,41 +225,105 @@ def handle(args: Namespace) -> int:
     if old_safety is not None and new_safety is not None:
         safety_delta = new_safety - old_safety
     reasons: list[str] = []
+    gate_failures: list[dict[str, Any]] = []
     if pass_rate_delta < args.min_pass_rate_delta:
-        reasons.append(
-            f"pass_rate_delta {pass_rate_delta:.4f} below required {args.min_pass_rate_delta:.4f}."
+        message = f"pass_rate_delta {pass_rate_delta:.4f} below required {args.min_pass_rate_delta:.4f}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "pass_rate_delta",
+                message,
+                actual=pass_rate_delta,
+                expected=args.min_pass_rate_delta,
+            )
         )
     if len(case_diff["regressed_cases"]) > args.max_regressed_cases:
-        reasons.append(
-            f"regressed_cases {len(case_diff['regressed_cases'])} exceeds allowed {args.max_regressed_cases}."
+        message = f"regressed_cases {len(case_diff['regressed_cases'])} exceeds allowed {args.max_regressed_cases}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "regressed_cases",
+                message,
+                actual=len(case_diff["regressed_cases"]),
+                expected=args.max_regressed_cases,
+            )
         )
     if case_diff["new_skill_failures"]:
-        reasons.append(f"new_skill_failures detected: {', '.join(case_diff['new_skill_failures'])}.")
+        message = f"new_skill_failures detected: {', '.join(case_diff['new_skill_failures'])}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "new_skill_failures",
+                message,
+                actual=len(case_diff["new_skill_failures"]),
+                expected=0,
+            )
+        )
     if quality_delta is not None and quality_delta < -args.max_quality_drop:
-        reasons.append(
-            f"quality_delta {quality_delta:.4f} below allowed drop {-args.max_quality_drop:.4f}."
+        message = f"quality_delta {quality_delta:.4f} below allowed drop {-args.max_quality_drop:.4f}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "quality_delta",
+                message,
+                actual=quality_delta,
+                expected=-args.max_quality_drop,
+            )
         )
     if token_increase_rate is not None and token_increase_rate > args.max_cost_increase_rate:
-        reasons.append(
-            f"token_increase_rate {token_increase_rate:.4f} exceeds allowed {args.max_cost_increase_rate:.4f}."
+        message = f"token_increase_rate {token_increase_rate:.4f} exceeds allowed {args.max_cost_increase_rate:.4f}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "token_increase_rate",
+                message,
+                actual=token_increase_rate,
+                expected=args.max_cost_increase_rate,
+            )
         )
     if duration_increase_rate is not None and duration_increase_rate > args.max_cost_increase_rate:
-        reasons.append(
-            f"duration_increase_rate {duration_increase_rate:.4f} exceeds allowed {args.max_cost_increase_rate:.4f}."
+        message = f"duration_increase_rate {duration_increase_rate:.4f} exceeds allowed {args.max_cost_increase_rate:.4f}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "duration_increase_rate",
+                message,
+                actual=duration_increase_rate,
+                expected=args.max_cost_increase_rate,
+            )
         )
     if safety_delta is not None and safety_delta < -args.max_safety_drop:
-        reasons.append(
-            f"safety_boundary_delta {safety_delta:.4f} below allowed drop {-args.max_safety_drop:.4f}."
+        message = f"safety_boundary_delta {safety_delta:.4f} below allowed drop {-args.max_safety_drop:.4f}."
+        reasons.append(message)
+        gate_failures.append(
+            _gate_failure(
+                "safety_boundary_delta",
+                message,
+                actual=safety_delta,
+                expected=-args.max_safety_drop,
+            )
         )
     if not reasons:
         reasons.append("New report satisfies pass-rate and regression gates.")
+    gate_summary = {
+        "passed": not gate_failures,
+        "failure_count": len(gate_failures),
+        "regressed_case_count": len(case_diff["regressed_cases"]),
+        "new_failure_count": len(case_diff["new_failures"]),
+        "new_skill_failure_count": len(case_diff["new_skill_failures"]),
+        "quality_delta": quality_delta,
+        "safety_boundary_delta": safety_delta,
+        "token_increase_rate": token_increase_rate,
+        "duration_increase_rate": duration_increase_rate,
+    }
     report: dict[str, Any] = {
         "schema_version": "1.0",
         "kind": "compare",
         "generated_at": utc_now(),
         "decision": "ADOPT" if not reasons or reasons == ["New report satisfies pass-rate and regression gates."] else "REJECT",
-        "old": {"path": str(Path(args.old_report).expanduser()), "pass_rate": old_pass_rate, "case_count": len(old_cases)},
-        "new": {"path": str(Path(args.new_report).expanduser()), "pass_rate": new_pass_rate, "case_count": len(new_cases)},
+        "old": {"path": str(Path(old_report_path).expanduser()), "pass_rate": old_pass_rate, "case_count": len(old_cases)},
+        "new": {"path": str(Path(new_report_path).expanduser()), "pass_rate": new_pass_rate, "case_count": len(new_cases)},
+        "baseline": baseline,
         "delta": {
             "pass_rate_delta": pass_rate_delta,
             "fixed_cases": case_diff["fixed_cases"],
@@ -240,6 +336,12 @@ def handle(args: Namespace) -> int:
         "case_diff": case_diff,
         "quality": {"old": old_quality, "new": new_quality},
         "cost": {"old": old_cost, "new": new_cost},
+        "gate_summary": gate_summary,
+        "gate_failures": gate_failures,
+        "blocking_regressions": {
+            "regressed_cases": case_diff["regressed_cases"],
+            "new_skill_failures": case_diff["new_skill_failures"],
+        },
         "policy": {
             "min_pass_rate_delta": args.min_pass_rate_delta,
             "max_regressed_cases": args.max_regressed_cases,
