@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 from scripts import aime_skill_hook
 
@@ -204,6 +205,7 @@ def test_write_trace_dir_records_aime_run_for_cli_ingest(tmp_path) -> None:
     assert written == trace_dir
     metadata = json.loads((trace_dir / "metadata.json").read_text(encoding="utf-8"))
     assert metadata == {
+        "schema_version": "1.0",
         "skill_id": "puck-rule-rca",
         "trace_metadata": {
             "source": "aime_trace_dir",
@@ -254,3 +256,116 @@ def test_write_trace_dir_skips_empty_trace(tmp_path, capsys) -> None:
     assert written is None
     assert not (tmp_path / "empty").exists()
     assert "skip trace-dir" in capsys.readouterr().err
+
+
+def test_bridge_aime_run_writes_trace_dir_from_context(tmp_path) -> None:
+    ctx = SimpleNamespace(
+        artifact_dir=str(tmp_path / "artifacts"),
+        skill_id="puck-rule-rca",
+        skill_body="# skill\nKeep confidence calibrated.",
+        runtime_events=[{"stage": "aime.done", "status": "completed", "message": "done"}],
+        tool_calls=[{"name": "fetch_metric", "status": "completed"}],
+        model_messages=[{"role": "assistant", "content": "done"}],
+        final_output={"rca_filter": True, "confidence": 0.91},
+        user_query="diagnose anomaly",
+        skill_version="1.0.0",
+        session_id="session-123",
+        assistant_id="assistant-123",
+        trace_id="trace-123",
+        run_id="run-123",
+    )
+
+    result = aime_skill_hook.bridge_aime_run(ctx, mode="trace-dir")
+
+    trace_dir = tmp_path / "artifacts" / "skilldoctor-trace"
+    assert result["mode"] == "trace-dir"
+    assert result["status"] == "trace_dir_written"
+    assert result["trace_dir"] == str(trace_dir)
+    metadata = json.loads((trace_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["skill_id"] == "puck-rule-rca"
+    assert metadata["trace_metadata"]["aime_session"] == "session-123"
+    assert metadata["trace_metadata"]["aime_assistant"] == "assistant-123"
+    assert metadata["trace_metadata"]["aime_trace_id"] == "trace-123"
+    assert metadata["trace_metadata"]["aime_run_id"] == "run-123"
+
+
+def test_bridge_aime_run_supports_http_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_push(**kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return {"run_id": "lg-test", "status": "passed"}
+
+    monkeypatch.setattr(aime_skill_hook, "push_to_skill_doctor", fake_push)
+
+    ctx = {
+        "skill_id": "puck-rule-rca",
+        "runtime_events": [{"stage": "aime.done", "status": "completed", "message": "done"}],
+        "tool_calls": [],
+        "model_messages": [],
+        "final_output": {"answer": "pong"},
+        "session_id": "session-http",
+        "assistant_id": "assistant-http",
+        "trace_id": "trace-http",
+        "run_id": "run-http",
+    }
+
+    result = aime_skill_hook.bridge_aime_run(
+        ctx,
+        mode="http",
+        endpoint="https://doctor.example",
+        api_key="secret-token",
+        timeout=12.5,
+    )
+
+    assert result == {
+        "mode": "http",
+        "trace_dir": None,
+        "snapshot": {"run_id": "lg-test", "status": "passed"},
+        "status": "pushed",
+    }
+    assert captured["skill_id"] == "puck-rule-rca"
+    assert captured["endpoint"] == "https://doctor.example"
+    assert captured["api_key"] == "secret-token"
+    assert captured["timeout"] == 12.5
+    assert captured["trace_metadata"] == {
+        "aime_session": "session-http",
+        "aime_assistant": "assistant-http",
+        "aime_trace_id": "trace-http",
+        "aime_run_id": "run-http",
+    }
+
+
+def test_bridge_aime_run_respects_off_mode_and_never_calls_bridge(monkeypatch) -> None:
+    monkeypatch.setattr(
+        aime_skill_hook,
+        "write_trace_dir",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("write_trace_dir should not be called")),
+    )
+    monkeypatch.setattr(
+        aime_skill_hook,
+        "push_to_skill_doctor",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("push_to_skill_doctor should not be called")),
+    )
+
+    result = aime_skill_hook.bridge_aime_run({"skill_id": "demo"}, mode="off")
+
+    assert result == {
+        "mode": "off",
+        "trace_dir": None,
+        "snapshot": None,
+        "status": "disabled",
+    }
+
+
+def test_bridge_aime_run_uses_env_trace_dir_override(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SKILL_DOCTOR_TRACE_DIR", str(tmp_path / "override-trace"))
+    ctx = {
+        "skill_id": "puck-rule-rca",
+        "runtime_events": [{"stage": "aime.done", "status": "completed", "message": "done"}],
+    }
+
+    result = aime_skill_hook.bridge_aime_run(ctx, mode="trace-dir")
+
+    assert result["trace_dir"] == str((tmp_path / "override-trace").expanduser())
+    assert (tmp_path / "override-trace" / "metadata.json").exists()

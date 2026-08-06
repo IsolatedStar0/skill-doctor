@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 __all__ = [
+    "bridge_aime_run",
     "push_to_skill_doctor",
     "write_trace_dir",
     "get_skill_content",
@@ -41,6 +42,8 @@ __all__ = [
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENDPOINT = "http://127.0.0.1:8010"
+DEFAULT_BRIDGE_MODE = "trace-dir"
+SUPPORTED_BRIDGE_MODES = {"off", "trace-dir", "http", "both"}
 
 
 # --------------------------------------------------------------------------- #
@@ -71,6 +74,67 @@ def _resolve(cli_value: str | None, env_key: str, default: str | None = None) ->
         return env_value
     dotenv = _load_dotenv(PROJECT_ROOT / ".env")
     return dotenv.get(env_key) or default
+
+
+def _ctx_get(ctx: Any, *names: str, default: Any = None) -> Any:
+    """Safely read the first available field from an AIME-like context.
+
+    ``ctx`` may be a plain dict, a SimpleNamespace, or a platform object with
+    properties. Access failures are swallowed so bridge code never breaks the
+    skill's main execution path.
+    """
+
+    for name in names:
+        try:
+            if isinstance(ctx, Mapping) and name in ctx:
+                value = ctx[name]
+            else:
+                value = getattr(ctx, name)
+        except Exception:
+            continue
+        if value is not None:
+            return value
+    return default
+
+
+def _normalize_bridge_mode(mode: str | None) -> str:
+    raw = (mode or DEFAULT_BRIDGE_MODE).strip().lower().replace("_", "-")
+    aliases = {
+        "disabled": "off",
+        "none": "off",
+        "false": "off",
+        "0": "off",
+        "push": "http",
+        "post": "http",
+        "trace": "trace-dir",
+        "tracedir": "trace-dir",
+    }
+    normalized = aliases.get(raw, raw)
+    if normalized not in SUPPORTED_BRIDGE_MODES:
+        print(
+            f"[skill-doctor] warning: unsupported SKILL_DOCTOR_BRIDGE_MODE={mode!r}; "
+            f"fallback to {DEFAULT_BRIDGE_MODE}.",
+            file=sys.stderr,
+        )
+        return DEFAULT_BRIDGE_MODE
+    return normalized
+
+
+def _compact_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in metadata.items() if value is not None and value != ""}
+
+
+def _resolve_trace_dir(ctx: Any, trace_dir: str | Path | None = None) -> Path:
+    if trace_dir:
+        return Path(trace_dir).expanduser()
+    env_trace_dir = os.getenv("SKILL_DOCTOR_TRACE_DIR")
+    if env_trace_dir:
+        return Path(env_trace_dir).expanduser()
+    artifact_dir = _ctx_get(ctx, "artifact_dir", "artifacts_dir", "output_dir") or os.getenv("AIME_ARTIFACT_DIR")
+    if artifact_dir:
+        return Path(str(artifact_dir)).expanduser() / "skilldoctor-trace"
+    skill_id = str(_ctx_get(ctx, "skill_id", "skill", default="unknown-skill") or "unknown-skill")
+    return PROJECT_ROOT / ".skilldoctor" / "aime-traces" / skill_id
 
 
 # --------------------------------------------------------------------------- #
@@ -337,6 +401,7 @@ def write_trace_dir(
         target.mkdir(parents=True, exist_ok=True)
 
         metadata: dict[str, Any] = {
+            "schema_version": "1.0",
             "skill_id": skill_id,
             "trace_metadata": {
                 "source": "aime_trace_dir",
@@ -371,6 +436,133 @@ def write_trace_dir(
         print(f"[skill-doctor] unexpected trace-dir write error: {exc}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         return None
+
+
+# --------------------------------------------------------------------------- #
+# High-level AIME bridge                                                       #
+# --------------------------------------------------------------------------- #
+
+def bridge_aime_run(
+    ctx: Any,
+    *,
+    mode: str | None = None,
+    trace_dir: str | Path | None = None,
+    endpoint: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 180.0,
+) -> dict[str, Any]:
+    """Bridge an AIME-like run context to SkillDoctor.
+
+    This is the recommended thin helper for skill-side integration. A business
+    skill only needs ``bridge_aime_run(ctx)``; this helper extracts common AIME
+    fields, writes a trace directory and/or performs HTTP push according to the
+    selected mode, and never raises into the caller.
+
+    Mode resolution:
+    - explicit ``mode`` argument
+    - ``SKILL_DOCTOR_BRIDGE_MODE`` env / ``.env``
+    - default: ``trace-dir``
+
+    Supported modes are ``off``, ``trace-dir``, ``http`` and ``both``. The
+    returned dict is a small status summary intended for tests/logging; callers
+    can ignore it safely.
+    """
+
+    result: dict[str, Any] = {
+        "mode": None,
+        "trace_dir": None,
+        "snapshot": None,
+        "status": "skipped",
+    }
+    try:
+        resolved_mode = _normalize_bridge_mode(
+            mode or _resolve(None, "SKILL_DOCTOR_BRIDGE_MODE", DEFAULT_BRIDGE_MODE)
+        )
+        result["mode"] = resolved_mode
+        if resolved_mode == "off":
+            print("[skill-doctor] bridge disabled by SKILL_DOCTOR_BRIDGE_MODE=off.")
+            result["status"] = "disabled"
+            return result
+
+        skill_id = str(_ctx_get(ctx, "skill_id", "skill", "skill_name", default="") or "")
+        skill_content = _ctx_get(ctx, "skill_content", "skill_body", "skill_prompt")
+        runtime_events = _ctx_get(ctx, "runtime_events", "events", default=[])
+        tool_calls = _ctx_get(ctx, "tool_calls", "tools", default=[])
+        model_messages = _ctx_get(ctx, "model_messages", "messages", default=[])
+        business_result = _ctx_get(ctx, "business_result", "final_output", "output", "result")
+        task = _ctx_get(ctx, "task", "user_query", "query", "prompt")
+        skill_version = _ctx_get(ctx, "skill_version", "version")
+
+        explicit_metadata = _ctx_get(ctx, "trace_metadata", "metadata", default={})
+        metadata: dict[str, Any] = {}
+        if isinstance(explicit_metadata, Mapping):
+            metadata.update(dict(explicit_metadata))
+        metadata.update(
+            _compact_metadata(
+                {
+                    "aime_session": _ctx_get(ctx, "session_id", "aime_session"),
+                    "aime_assistant": _ctx_get(ctx, "assistant_id", "aime_assistant"),
+                    "aime_trace_id": _ctx_get(ctx, "trace_id", "aime_trace_id"),
+                    "aime_run_id": _ctx_get(ctx, "run_id", "aime_run_id"),
+                    "artifact_dir": _ctx_get(ctx, "artifact_dir", "artifacts_dir"),
+                }
+            )
+        )
+
+        wrote_trace = False
+        pushed = False
+        if resolved_mode in {"trace-dir", "both"}:
+            target = _resolve_trace_dir(ctx, trace_dir)
+            written = write_trace_dir(
+                target,
+                skill_id=skill_id,
+                skill_content=skill_content,
+                runtime_events=runtime_events,
+                tool_calls=tool_calls,
+                model_messages=model_messages,
+                business_result=business_result,
+                task=task,
+                skill_version=skill_version,
+                trace_metadata=metadata,
+            )
+            if written is not None:
+                wrote_trace = True
+                result["trace_dir"] = str(written)
+                print(f"[skill-doctor] trace-dir written: {written}")
+
+        if resolved_mode in {"http", "both"}:
+            snapshot = push_to_skill_doctor(
+                skill_id=skill_id,
+                skill_content=skill_content,
+                runtime_events=runtime_events,
+                tool_calls=tool_calls,
+                model_messages=model_messages,
+                business_result=business_result,
+                task=task,
+                skill_version=skill_version,
+                trace_metadata=metadata,
+                endpoint=endpoint,
+                api_key=api_key,
+                timeout=timeout,
+            )
+            if snapshot is not None:
+                pushed = True
+                result["snapshot"] = snapshot
+
+        if wrote_trace and pushed:
+            result["status"] = "bridged"
+        elif wrote_trace:
+            result["status"] = "trace_dir_written"
+        elif pushed:
+            result["status"] = "pushed"
+        else:
+            result["status"] = "skipped"
+        return result
+    except Exception as exc:  # never leak into the skill's main flow
+        print(f"[skill-doctor] unexpected bridge_aime_run error: {exc}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        result["status"] = "error"
+        return result
 
 
 # --------------------------------------------------------------------------- #

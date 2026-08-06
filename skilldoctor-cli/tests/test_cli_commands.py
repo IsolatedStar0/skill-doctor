@@ -264,6 +264,7 @@ def test_ingest_aime_reads_raw_trace_directory(
     _write_json(
         trace_dir / "metadata.json",
         {
+            "schema_version": "1.0",
             "task": "diagnose AIME run directory",
             "skill_id": "aime-directory-skill",
             "skill_version": "2.0.0",
@@ -350,6 +351,93 @@ def test_ingest_aime_reads_raw_trace_directory(
         "adapter": "aime_cli_ingest",
         "input_mode": "trace_dir",
         "trace_dir": str(trace_dir),
+        "trace_schema_version": "1.0",
+    }
+
+
+def test_ingest_generic_reads_standard_trace_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import ingest
+
+    trace_dir = tmp_path / "generic-run-001"
+    _write_json(
+        trace_dir / "metadata.json",
+        {
+            "schema_version": "1.0",
+            "task": "diagnose generic agent run",
+            "skill_id": "generic-directory-skill",
+            "skill_version": "3.0.0",
+            "trace_metadata": {"host": "custom-agent"},
+        },
+    )
+    (trace_dir / "skill_content.md").write_text("# Generic skill\nFollow the contract.", encoding="utf-8")
+    _write_jsonl(
+        trace_dir / "runtime_events.jsonl",
+        [{"stage": "agent.done", "status": "completed", "message": "done"}],
+    )
+    _write_jsonl(
+        trace_dir / "tool_calls.jsonl",
+        [{"name": "lookup", "status": "completed", "arguments": {"id": 1}}],
+    )
+    _write_json(trace_dir / "business_result.json", {"verdict": "ok", "verdict_type": "pass"})
+    json_out = tmp_path / "ingest-generic.json"
+    captured: dict[str, Any] = {}
+    state = {
+        "run_id": "lg-generic-dir-ingest",
+        "status": "passed",
+        "skill_id": "generic-directory-skill",
+        "skill_version": "3.0.0",
+        "execution": {"executor": "generic-skill-trace", "pass_rate": 1.0},
+        "attribution": {"cause": "none", "action": "none"},
+    }
+
+    def ingest_trace(request: dict[str, Any]) -> dict[str, Any]:
+        captured["request"] = request
+        return state
+
+    monkeypatch.setattr(ingest, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        ingest,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=ingest_trace),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "ingest",
+            "--source",
+            "generic",
+            "--trace-dir",
+            str(trace_dir),
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_OK
+    assert captured["request"]["skill_id"] == "generic-directory-skill"
+    assert captured["request"]["skill_content"] == "# Generic skill\nFollow the contract."
+    assert captured["request"]["runtime_events"][0]["stage"] == "agent.done"
+    assert captured["request"]["tool_calls"][0]["name"] == "lookup"
+    assert captured["request"]["business_result"] == {"verdict": "ok", "verdict_type": "pass"}
+    assert captured["request"]["trace_metadata"] == {
+        "host": "custom-agent",
+        "source": "generic_cli_ingest",
+        "skill_runtime": "generic",
+    }
+    assert "schema_version" not in captured["request"]
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["ingest"] == {
+        "source": "generic",
+        "adapter": "generic_cli_ingest",
+        "input_mode": "trace_dir",
+        "trace_dir": str(trace_dir),
+        "trace_schema_version": "1.0",
     }
 
 
