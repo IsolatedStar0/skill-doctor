@@ -91,6 +91,25 @@ def markdown_for_run(report: dict[str, Any]) -> str:
                     continue
                 lines.append(f"- `{name}`")
                 lines.extend(f"  - {reason}" for reason in reasons)
+        domain_quality = quality.get("domain_quality") or {}
+        if domain_quality:
+            lines.extend(
+                [
+                    "",
+                    "### Domain Quality",
+                    f"- Skill: `{domain_quality.get('skill_id')}`",
+                    f"- Score: `{domain_quality.get('score')}`",
+                    f"- Passed: `{domain_quality.get('passed')}`",
+                    "",
+                    "| Check | Passed | Weight | Reason |",
+                    "| --- | --- | ---: | --- |",
+                ]
+            )
+            for item in domain_quality.get("checks") or []:
+                reason = str(item.get("reason") or "").replace("|", "\\|").replace("\n", " ")
+                lines.append(
+                    f"| {item.get('name')} | {item.get('passed')} | {item.get('weight')} | {reason} |"
+                )
         if quality.get("evidence_refs"):
             lines.extend(["", "### Evidence References"])
             lines.extend(f"- `{item}`" for item in quality["evidence_refs"][:20])

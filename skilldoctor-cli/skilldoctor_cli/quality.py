@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
-DIMENSION_NAMES = (
+BASE_DIMENSION_NAMES = (
     "output_quality",
     "contract_compliance",
     "evidence_support",
@@ -11,6 +12,7 @@ DIMENSION_NAMES = (
     "safety_boundary",
     "stability",
 )
+DIMENSION_NAMES = (*BASE_DIMENSION_NAMES, "domain_quality")
 
 
 def _clamp(value: float) -> float:
@@ -44,6 +46,188 @@ def _collect_evidence_refs(
     for index, event in enumerate(events[:5], start=1):
         refs.append(_event_label(event, index))
     return refs
+
+
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            return str(value)
+    return str(value).strip()
+
+
+def _raw_business_result(business: dict[str, Any]) -> dict[str, Any]:
+    extra = business.get("extra") if isinstance(business, dict) else None
+    raw = extra.get("raw_business_result") if isinstance(extra, dict) else None
+    return raw if isinstance(raw, dict) else business
+
+
+def _business_confidence(business: dict[str, Any], raw: dict[str, Any]) -> float | None:
+    value = business.get("confidence")
+    if value is None:
+        value = raw.get("confidence")
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _business_reason_text(business: dict[str, Any], raw: dict[str, Any]) -> str:
+    fragments: list[str] = []
+    for key in ("verdict", "reason", "summary", "rca_content", "rca_reason"):
+        fragments.append(_text(business.get(key)))
+        fragments.append(_text(raw.get(key)))
+    for detail in business.get("details") or []:
+        if isinstance(detail, dict):
+            fragments.append(_text(detail.get("reason") or detail.get("detail")))
+    raw_detail = raw.get("rca_detail") or raw.get("details")
+    if raw_detail:
+        fragments.append(_text(raw_detail))
+    return "\n".join(item for item in fragments if item)
+
+
+def _trace_evidence_strength(
+    execution: dict[str, Any],
+    attribution: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> tuple[int, list[str]]:
+    strength = 0
+    reasons: list[str] = []
+    assertions = execution.get("assertions") or []
+    passed_assertions = [item for item in assertions if item.get("passed")]
+    if passed_assertions:
+        strength += 1
+        reasons.append(f"有 {len(passed_assertions)} 条通过断言")
+    evidence_refs = attribution.get("evidence_refs") or []
+    if evidence_refs:
+        strength += 1
+        reasons.append(f"有 {len(evidence_refs)} 条归因证据")
+    artifacts = execution.get("artifacts") or {}
+    if artifacts:
+        strength += 1
+        reasons.append(f"有 {len(artifacts)} 个 artifact")
+    for event in events:
+        stage = str(event.get("stage") or event.get("id") or "")
+        metadata = event.get("metadata") or {}
+        if stage == "agent.analyze.tool_calls" and int(metadata.get("total") or 0) > 0:
+            strength += 1
+            reasons.append(f"记录了 {metadata.get('total')} 次工具调用分析")
+            break
+    return strength, reasons
+
+
+def _check(name: str, passed: bool, reason: str, weight: float) -> dict[str, Any]:
+    return {
+        "name": name,
+        "passed": passed,
+        "weight": weight,
+        "reason": reason,
+    }
+
+
+def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
+    skill_id = str(state.get("skill_id") or "").lower()
+    if skill_id != "puck-rule-rca":
+        return None
+
+    business = state.get("business_result") or {}
+    if not isinstance(business, dict):
+        business = {"verdict": _text(business)}
+    raw = _raw_business_result(business)
+    execution = state.get("execution") or {}
+    attribution = state.get("attribution") or {}
+    events = execution.get("runtime_events") or state.get("events") or []
+    confidence = _business_confidence(business, raw)
+    reason_text = _business_reason_text(business, raw)
+    verdict = _text(business.get("verdict") or raw.get("verdict"))
+    verdict_type = _text(business.get("verdict_type") or raw.get("verdict_type")).lower()
+    has_filter_decision = isinstance(raw.get("rca_filter"), bool)
+    details = business.get("details") if isinstance(business.get("details"), list) else []
+    strength, strength_reasons = _trace_evidence_strength(execution, attribution, events)
+
+    clear_verdict = bool(verdict or verdict_type or has_filter_decision)
+    confidence_valid = confidence is not None and 0.0 <= confidence <= 1.0
+    reasoning_enough = len(reason_text) >= 20 and not reason_text.startswith("{")
+    detail_enough = bool(details) or bool(raw.get("rca_detail"))
+    contract_shape = verdict_type in {"pass", "warning", "fail"} and bool(details)
+    evidence_available = strength > 0
+    confidence_supported = True
+    confidence_reason = "confidence 未达到高置信区间，无需额外证据惩罚。"
+    if confidence is None:
+        confidence_supported = False
+        confidence_reason = "缺少 confidence，无法判断置信度与证据是否匹配。"
+    elif confidence >= 0.85 and strength < 2:
+        confidence_supported = False
+        confidence_reason = "confidence 较高，但 trace 中可用证据少于 2 类。"
+    elif confidence >= 0.85:
+        confidence_reason = "高 confidence 有足够 trace 证据支撑。"
+
+    checks = [
+        _check(
+            "has_clear_verdict",
+            clear_verdict,
+            "输出包含明确 RCA 结论。" if clear_verdict else "缺少明确 RCA 结论。",
+            0.18,
+        ),
+        _check(
+            "has_valid_confidence",
+            confidence_valid,
+            (
+                f"confidence={confidence:.2f}，处于 0~1 合法范围。"
+                if confidence_valid and confidence is not None
+                else "缺少合法 confidence。"
+            ),
+            0.16,
+        ),
+        _check(
+            "has_reasoning",
+            reasoning_enough,
+            "输出包含可读的降噪/不降噪依据。" if reasoning_enough else "缺少充分的 RCA 依据说明。",
+            0.20,
+        ),
+        _check(
+            "has_detail_evidence",
+            detail_enough,
+            "输出包含 detail/rca_detail 证据。" if detail_enough else "缺少 detail 或 rca_detail。",
+            0.14,
+        ),
+        _check(
+            "contract_shape",
+            contract_shape,
+            "业务结果符合 verdict_type + details 标准契约。" if contract_shape else "业务结果未完全符合标准契约。",
+            0.14,
+        ),
+        _check(
+            "trace_evidence_available",
+            evidence_available,
+            "；".join(strength_reasons) if strength_reasons else "trace 中缺少可用证据支撑。",
+            0.08,
+        ),
+        _check(
+            "confidence_evidence_match",
+            confidence_supported,
+            confidence_reason,
+            0.10,
+        ),
+    ]
+    score = sum(item["weight"] for item in checks if item["passed"])
+    failed = [item for item in checks if not item["passed"]]
+    return {
+        "skill_id": "puck-rule-rca",
+        "score": round(_clamp(score), 4),
+        "passed": _clamp(score) >= 0.75,
+        "confidence": confidence,
+        "trace_evidence_strength": strength,
+        "checks": checks,
+        "findings": [item["reason"] for item in failed],
+    }
 
 
 def score_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +267,7 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
         "safety_boundary": 0.65 if attribution.get("cause") in {"tool", "platform"} else 0.9,
         "stability": _clamp(1.0 - regression_rate - (0.1 if state.get("status") == "failed" else 0.0)),
     }
+    domain_quality = _score_puck_rule_rca_domain(state)
     weights = {
         "output_quality": 0.30,
         "contract_compliance": 0.20,
@@ -91,8 +276,12 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
         "safety_boundary": 0.10,
         "stability": 0.15,
     }
+    if domain_quality is not None:
+        dimensions["domain_quality"] = float(domain_quality["score"])
+        weights = {name: round(weight * 0.85, 4) for name, weight in weights.items()}
+        weights["domain_quality"] = 0.15
     score = sum(dimensions[name] * weights[name] for name in weights)
-    reasons: dict[str, list[str]] = {name: [] for name in DIMENSION_NAMES}
+    reasons: dict[str, list[str]] = {name: [] for name in dimensions}
     reasons["output_quality"].append(
         f"执行通过率为 {pass_rate:.2f}，断言通过率为 {assertion_score:.2f}。"
     )
@@ -140,6 +329,13 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
     if not regression_rate and state.get("status") != "failed":
         reasons["stability"].append("未报告回归且 run 未失败，稳定性正常。")
 
+    if domain_quality is not None:
+        reasons["domain_quality"].append(
+            f"puck-rule-rca 领域评分为 {domain_quality['score']:.2f}。"
+        )
+        for finding in domain_quality.get("findings") or []:
+            reasons["domain_quality"].append(finding)
+
     findings: list[str] = []
     if dimensions["output_quality"] < 0.75:
         findings.append("输出质量不足：通过率或断言通过比例偏低。")
@@ -149,6 +345,8 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
         findings.append("成本效率偏低：token 或耗时超过 MVP 阈值。")
     if failed_events:
         findings.append(f"存在 {len(failed_events)} 个失败事件，成功链路稳定性不足。")
+    if domain_quality is not None and not domain_quality.get("passed"):
+        findings.append("puck-rule-rca 领域质量不足：业务结论、证据或置信度存在风险。")
     score_breakdown = {
         name: {
             "score": round(dimensions[name], 4),
@@ -156,10 +354,10 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
             "weighted_score": round(dimensions[name] * weights[name], 4),
             "reasons": reasons[name],
         }
-        for name in DIMENSION_NAMES
+        for name in dimensions
     }
 
-    return {
+    result = {
         "schema_version": "1.0",
         "overall_score": round(score, 4),
         "grade": "A" if score >= 0.9 else "B" if score >= 0.8 else "C" if score >= 0.7 else "D",
@@ -170,3 +368,6 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
         "evidence_refs": _collect_evidence_refs(execution, attribution, events),
         "findings": findings,
     }
+    if domain_quality is not None:
+        result["domain_quality"] = domain_quality
+    return result

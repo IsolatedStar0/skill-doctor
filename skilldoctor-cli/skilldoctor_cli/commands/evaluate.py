@@ -20,6 +20,7 @@ DIMENSION_OPTIONS = {
     "cost_efficiency": "min_cost_efficiency",
     "safety_boundary": "min_safety_boundary",
     "stability": "min_stability",
+    "domain_quality": "min_domain_quality",
 }
 
 
@@ -34,6 +35,7 @@ def register(subcommands) -> None:
     command.add_argument("--min-cost-efficiency", type=float)
     command.add_argument("--min-safety-boundary", type=float)
     command.add_argument("--min-stability", type=float)
+    command.add_argument("--min-domain-quality", type=float)
     command.add_argument("--json-out", type=Path)
     command.add_argument("--md-out", type=Path)
     command.add_argument("--quiet", action="store_true")

@@ -568,6 +568,177 @@ def test_evaluate_can_gate_on_dimension_threshold_and_render_reasons(
     assert "Quality Gate" in markdown
 
 
+def test_evaluate_scores_puck_rule_rca_domain_quality(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "puck-rule-rca-trace.json", {"skill_id": "puck-rule-rca"})
+    json_out = tmp_path / "evaluate-domain.json"
+    md_out = tmp_path / "evaluate-domain.md"
+    state = {
+        "run_id": "lg-test-puck-rca",
+        "status": "passed",
+        "skill_id": "puck-rule-rca",
+        "skill_version": "1.0.0",
+        "business_result": {
+            "verdict": "当前异常建议降噪：历史同期波动一致，且影响面有限。",
+            "verdict_type": "pass",
+            "confidence": 0.82,
+            "details": [
+                {
+                    "name": "history_pattern",
+                    "status": "pass",
+                    "reason": "历史同期存在相同波动，工具证据支持降噪。",
+                }
+            ],
+            "extra": {
+                "raw_business_result": {
+                    "rca_filter": True,
+                    "rca_content": "当前异常建议降噪：历史同期波动一致，且影响面有限。",
+                    "confidence": 0.82,
+                    "rca_detail": [{"group_detail_name": "history_pattern"}],
+                }
+            },
+        },
+        "execution": {
+            "passed": True,
+            "pass_rate": 1.0,
+            "duration_ms": 1_000,
+            "assertions": [
+                {"id": "runtime-events-clean", "passed": True},
+                {"id": "tool-calls-healthy", "passed": True},
+            ],
+            "runtime_events": [
+                {
+                    "stage": "agent.analyze.tool_calls",
+                    "status": "completed",
+                    "metadata": {"total": 2, "failed": 0},
+                }
+            ],
+        },
+        "attribution": {"cause": "none", "action": "none", "evidence_refs": ["tool:history"]},
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.75",
+            "--min-domain-quality",
+            "0.90",
+            "--json-out",
+            str(json_out),
+            "--md-out",
+            str(md_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_OK
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["dimension_thresholds"] == {"domain_quality": 0.9}
+    quality = report["quality"]
+    assert quality["dimensions"]["domain_quality"] == 1.0
+    assert quality["domain_quality"]["passed"] is True
+    assert [item["name"] for item in quality["domain_quality"]["checks"]] == [
+        "has_clear_verdict",
+        "has_valid_confidence",
+        "has_reasoning",
+        "has_detail_evidence",
+        "contract_shape",
+        "trace_evidence_available",
+        "confidence_evidence_match",
+    ]
+    assert report["quality_gate"] == {"passed": True, "failures": []}
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Domain Quality" in markdown
+    assert "confidence_evidence_match" in markdown
+
+
+def test_evaluate_fails_domain_gate_for_weak_puck_rule_rca_result(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "weak-puck-rule-rca-trace.json", {"skill_id": "puck-rule-rca"})
+    json_out = tmp_path / "evaluate-weak-domain.json"
+    state = {
+        "run_id": "lg-test-weak-puck-rca",
+        "status": "passed",
+        "skill_id": "puck-rule-rca",
+        "skill_version": "1.0.0",
+        "business_result": {
+            "verdict": "{}",
+            "verdict_type": "warning",
+            "confidence": 0.95,
+            "details": [],
+            "extra": {"raw_business_result": {"rca_filter": True, "confidence": 0.95}},
+        },
+        "execution": {
+            "passed": True,
+            "pass_rate": 1.0,
+            "duration_ms": 1_000,
+            "assertions": [],
+            "runtime_events": [],
+        },
+        "attribution": {"cause": "none", "action": "none"},
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.50",
+            "--min-domain-quality",
+            "0.75",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_QUALITY_GATE_FAILED
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    domain = report["quality"]["domain_quality"]
+    assert domain["passed"] is False
+    assert domain["score"] < 0.75
+    assert report["quality_gate"]["failures"] == [
+        {
+            "name": "domain_quality",
+            "expected": 0.75,
+            "actual": report["quality"]["dimensions"]["domain_quality"],
+            "message": f"domain_quality {report['quality']['dimensions']['domain_quality']:.4f} is below required 0.7500.",
+        }
+    ]
+    assert any(
+        "puck-rule-rca 领域质量不足" in finding
+        for finding in report["quality"]["findings"]
+    )
+
+
 def test_bench_loads_jsonl_skips_comments_and_returns_failure_code(
     tmp_path: Path,
     monkeypatch,
