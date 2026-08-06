@@ -11,7 +11,11 @@ def register(subcommands) -> None:
     command = subcommands.add_parser("report", help="Render an existing Skill Doctor JSON report as Markdown.")
     command.add_argument("json_report", help="JSON report produced by diagnose/evaluate/bench/compare.")
     command.add_argument("--project-root", type=Path)
-    command.add_argument("--kind", choices=["diagnose", "evaluate", "bench", "suite", "compare"], default=None)
+    command.add_argument(
+        "--kind",
+        choices=["diagnose", "evaluate", "bench", "suite", "compare", "repair_preview"],
+        default=None,
+    )
     command.add_argument("--md-out", type=Path)
     command.set_defaults(handler=handle)
 

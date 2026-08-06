@@ -56,6 +56,17 @@ def test_diagnose_writes_reports_and_returns_skill_failure_code(
         "execution": {"pass_rate": 0.5},
         "attribution": {"cause": "skill", "action": "patch_skill", "confidence": 0.9},
     }
+    state["attribution"]["t_star"] = 0
+    state["attribution"]["fault_chain"] = [0]
+    state["attribution"]["steps"] = [
+        {
+            "index": 0,
+            "source": "runtime",
+            "label": "tool.call",
+            "passed": False,
+            "detail": "Tool call failed before final answer.",
+        }
+    ]
 
     monkeypatch.setattr(diagnose, "backend_modules", _fake_backend_modules)
     monkeypatch.setattr(
@@ -83,7 +94,10 @@ def test_diagnose_writes_reports_and_returns_skill_failure_code(
     assert report["kind"] == "diagnose"
     assert report["state"]["attribution"]["cause"] == "skill"
     assert report["markdown_path"] == str(md_out)
-    assert "Skill Doctor Report" in md_out.read_text(encoding="utf-8")
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Skill Doctor Report" in markdown
+    assert "Step-Level Attribution" in markdown
+    assert "tool.call" in markdown
 
 
 def test_evaluate_returns_quality_gate_code_when_score_is_low(
@@ -712,6 +726,314 @@ def test_compare_accepts_explicit_baseline_path(tmp_path: Path) -> None:
         "source": "explicit",
     }
     assert report["gate_summary"]["passed"] is True
+
+
+def test_compare_accepts_named_baseline_path(tmp_path: Path) -> None:
+    baseline_report = _write_json(
+        tmp_path / ".skilldoctor" / "baselines" / "main.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    new_report = _write_json(
+        tmp_path / "new.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    json_out = tmp_path / "compare.json"
+    md_out = tmp_path / "compare.md"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "compare",
+            "--baseline-name",
+            "main",
+            str(new_report),
+            "--json-out",
+            str(json_out),
+            "--md-out",
+            str(md_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["old"]["path"] == str(baseline_report)
+    assert report["new"]["path"] == str(new_report)
+    assert report["baseline"] == {
+        "enabled": True,
+        "path": str(baseline_report),
+        "source": "named",
+        "name": "main",
+    }
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "## Baseline" in markdown
+    assert "Source: `named`" in markdown
+
+
+def test_compare_auto_discovers_main_baseline(tmp_path: Path) -> None:
+    baseline_report = _write_json(
+        tmp_path / ".skilldoctor" / "baselines" / "main.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    new_report = _write_json(
+        tmp_path / "new.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    json_out = tmp_path / "compare.json"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "compare",
+            str(new_report),
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["old"]["path"] == str(baseline_report)
+    assert report["new"]["path"] == str(new_report)
+    assert report["baseline"] == {
+        "enabled": True,
+        "path": str(baseline_report),
+        "source": "auto",
+        "name": "main",
+    }
+
+
+def test_baseline_save_list_and_compare_auto_discovery(tmp_path: Path, capsys) -> None:
+    source_report = _write_json(
+        tmp_path / "bench.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    new_report = _write_json(
+        tmp_path / "new.json",
+        {
+            "kind": "bench",
+            "summary": {"pass_rate": 1.0},
+            "cases": [{"case_id": "case-1", "passed": True}],
+        },
+    )
+    json_out = tmp_path / "compare.json"
+
+    save_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "baseline",
+            "save",
+            str(source_report),
+            "--name",
+            "main",
+        ]
+    )
+    assert save_code == 0
+    saved_path = tmp_path / ".skilldoctor" / "baselines" / "main.json"
+    assert json.loads(saved_path.read_text(encoding="utf-8")) == json.loads(source_report.read_text(encoding="utf-8"))
+    save_output = capsys.readouterr().out
+    assert "baseline saved:" in save_output
+    assert "source kind: bench" in save_output
+
+    duplicate_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "baseline",
+            "save",
+            str(source_report),
+            "--name",
+            "main",
+        ]
+    )
+    assert duplicate_code == 1
+    assert "baseline already exists" in capsys.readouterr().err
+
+    list_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "baseline",
+            "list",
+        ]
+    )
+    assert list_code == 0
+    list_output = capsys.readouterr().out
+    assert "Baselines:" in list_output
+    assert "main:" in list_output
+    assert "kind=bench" in list_output
+    assert "pass_rate=1.0" in list_output
+
+    compare_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "compare",
+            str(new_report),
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+    assert compare_code == 0
+    compare_report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert compare_report["baseline"] == {
+        "enabled": True,
+        "path": str(saved_path),
+        "source": "auto",
+        "name": "main",
+    }
+
+
+def test_repair_preview_generates_auditable_skill_patch_plan(tmp_path: Path) -> None:
+    diagnose_report = _write_json(
+        tmp_path / "diagnose.json",
+        {
+            "kind": "diagnose",
+            "state": {
+                "run_id": "lg-failed",
+                "status": "failed",
+                "skill_id": "release-checklist",
+                "skill_version": "1.0.0",
+                "attribution": {
+                    "cause": "skill",
+                    "action": "patch_skill",
+                    "fault_type": "skill_wrong",
+                    "t_star": 1,
+                    "fault_chain": [1],
+                    "improvement_principle": "Require rollback validation before finalizing release checklist output.",
+                    "explanation": "Rollback validation was required but missing.",
+                    "evidence_refs": ["rollback-gate-present"],
+                    "steps": [
+                        {
+                            "index": 1,
+                            "source": "skill",
+                            "label": "rollback-gate-present",
+                            "passed": False,
+                            "detail": "Rollback validation was required but not included.",
+                        }
+                    ],
+                },
+            },
+        },
+    )
+    json_out = tmp_path / "preview.json"
+    md_out = tmp_path / "preview.md"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "repair-preview",
+            str(diagnose_report),
+            "--json-out",
+            str(json_out),
+            "--md-out",
+            str(md_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 0
+    preview = json.loads(json_out.read_text(encoding="utf-8"))
+    assert preview["kind"] == "repair_preview"
+    assert preview["repairable"] is True
+    assert preview["target"] == {"skill_id": "release-checklist", "skill_version": "1.0.0"}
+    assert preview["diagnosis"]["failed_step"]["label"] == "rollback-gate-present"
+    assert preview["proposal"]["mode"] == "revise"
+    assert preview["proposal"]["suggested_change"] == "Require rollback validation before finalizing release checklist output."
+    assert preview["mutation"] == {
+        "applies_changes": False,
+        "apply_policy": "manual_review_required",
+        "message": "repair-preview is read-only; it does not modify skills or project files.",
+        "allowed_next_actions": [
+            "review_preview",
+            "run_required_validation",
+            "create_manual_skill_patch",
+        ],
+    }
+    assert preview["risk"]["level"] == "medium"
+    assert preview["validation"]["required"] is True
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Repair Preview" in markdown
+    assert "rollback-gate-present" in markdown
+    assert "Mutation Policy" in markdown
+    assert "manual_review_required" in markdown
+    assert "Required Validation" in markdown
+
+
+def test_repair_preview_does_not_recommend_non_skill_mutation(tmp_path: Path) -> None:
+    diagnose_report = _write_json(
+        tmp_path / "platform.json",
+        {
+            "kind": "diagnose",
+            "state": {
+                "run_id": "lg-platform",
+                "status": "failed",
+                "skill_id": "demo",
+                "skill_version": "1.0.0",
+                "attribution": {
+                    "cause": "platform",
+                    "action": "split_non_skill",
+                    "fault_type": "reasoning_wrong",
+                    "explanation": "The execution failed at the platform boundary.",
+                },
+            },
+        },
+    )
+    json_out = tmp_path / "preview.json"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "repair-preview",
+            str(diagnose_report),
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == 0
+    preview = json.loads(json_out.read_text(encoding="utf-8"))
+    assert preview["repairable"] is False
+    assert preview["proposal"]["mode"] == "none"
+    assert preview["mutation"] == {
+        "applies_changes": False,
+        "apply_policy": "manual_review_required",
+        "message": "repair-preview is read-only; it does not modify skills or project files.",
+        "allowed_next_actions": ["route_to_non_skill_owner"],
+    }
+    assert preview["risk"] == {
+        "level": "low",
+        "reasons": ["No skill mutation is recommended for this report."],
+    }
+    assert preview["validation"] == {"required": False, "commands": []}
 
 
 def test_report_renders_existing_json_report(tmp_path: Path, capsys) -> None:

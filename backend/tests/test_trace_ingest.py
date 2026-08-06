@@ -169,6 +169,8 @@ def test_trace_ingest_runs_attribution_pipeline(
         assert state["attribution"]["cause"] == "skill"
         assert state["attribution"]["agent_source"] == "rule-based"
         assert state["attribution"]["agent_conclusion"] == ""
+        assert state["attribution"]["steps"]
+        assert state["attribution"]["steps"][0]["index"] == 0
         assert state["status"] == "failed"
         assert service.get(state["run_id"])["run_id"] == state["run_id"]
         stages = [event["stage"] for event in state["events"]]

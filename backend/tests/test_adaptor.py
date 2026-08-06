@@ -300,6 +300,9 @@ def test_run_service_populates_adaptor_fields(tmp_path: Path) -> None:
     # New Skill-Adaptor fields are populated
     assert attribution["fault_type"] == "skill_wrong"
     assert attribution["t_star"] == 0
+    assert attribution["steps"]
+    assert attribution["steps"][0]["index"] == 0
+    assert {"source", "label", "passed", "detail"}.issubset(attribution["steps"][0])
     assert attribution["improvement_principle"]
     assert attribution["skill_attributions"]
     assert attribution["skill_attributions"][0]["action"] == "revise"

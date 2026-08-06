@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import bench, compare, diagnose, evaluate, report
+from .commands import baseline, bench, compare, diagnose, evaluate, repair_preview, report
 from .workspace import default_project_root
 
 
@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skill Doctor repo root. Defaults to the parent of skilldoctor-cli.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for module in (diagnose, evaluate, bench, compare, report):
+    for module in (diagnose, evaluate, bench, compare, baseline, repair_preview, report):
         module.register(subcommands)
     return parser
 

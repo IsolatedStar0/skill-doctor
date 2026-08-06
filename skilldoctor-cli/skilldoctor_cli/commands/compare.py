@@ -1,21 +1,29 @@
 from __future__ import annotations
 
-from argparse import Namespace
+from argparse import Namespace, SUPPRESS
 from pathlib import Path
 from typing import Any
 
 from ..output.console import print_compare_summary
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
-from ..workspace import default_report_path, load_json, utc_now
+from ..workspace import baseline_report_path, default_report_path, load_json, utc_now
 
 
 def register(subcommands) -> None:
     command = subcommands.add_parser("compare", help="Compare old/new bench or evaluation reports for regressions.")
-    command.add_argument("old_report", help="Old JSON report path, or new report path when --baseline is set.")
+    command.add_argument(
+        "old_report",
+        help="Old JSON report path, or new report path when --baseline/--baseline-name/auto baseline is used.",
+    )
     command.add_argument("new_report", nargs="?", help="New JSON report path.")
-    command.add_argument("--project-root", type=Path)
+    command.add_argument("--project-root", type=Path, default=SUPPRESS)
     command.add_argument("--baseline", type=Path, help="Baseline JSON report path used as the old report.")
+    command.add_argument(
+        "--baseline-name",
+        default=None,
+        help="Named baseline under <project-root>/.skilldoctor/baselines/<name>.json.",
+    )
     command.add_argument("--min-pass-rate-delta", type=float, default=0.0)
     command.add_argument("--max-regressed-cases", type=int, default=0)
     command.add_argument("--max-quality-drop", type=float, default=0.0)
@@ -181,6 +189,8 @@ def _gate_failure(name: str, message: str, *, actual: Any, expected: Any) -> dic
 
 
 def _resolve_report_paths(args: Namespace) -> tuple[Path, Path, dict[str, Any]]:
+    if args.baseline and args.baseline_name:
+        raise SystemExit("compare accepts either --baseline or --baseline-name, not both.")
     if args.baseline:
         return (
             args.baseline,
@@ -191,8 +201,41 @@ def _resolve_report_paths(args: Namespace) -> tuple[Path, Path, dict[str, Any]]:
                 "source": "explicit",
             },
         )
+    if args.baseline_name:
+        try:
+            baseline_path = baseline_report_path(Path(args.project_root), args.baseline_name)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
+        if not baseline_path.exists():
+            raise SystemExit(f"named baseline not found: {baseline_path}")
+        return (
+            baseline_path,
+            Path(args.new_report or args.old_report),
+            {
+                "enabled": True,
+                "path": str(baseline_path.expanduser()),
+                "source": "named",
+                "name": args.baseline_name.strip(),
+            },
+        )
     if not args.new_report:
-        raise SystemExit("compare requires old_report and new_report, or --baseline with a new report.")
+        baseline_name = "main"
+        baseline_path = baseline_report_path(Path(args.project_root), baseline_name)
+        if not baseline_path.exists():
+            raise SystemExit(
+                "compare requires old_report and new_report, --baseline, --baseline-name, "
+                f"or an auto baseline at {baseline_path}."
+            )
+        return (
+            baseline_path,
+            Path(args.old_report),
+            {
+                "enabled": True,
+                "path": str(baseline_path.expanduser()),
+                "source": "auto",
+                "name": baseline_name,
+            },
+        )
     return (
         Path(args.old_report),
         Path(args.new_report),

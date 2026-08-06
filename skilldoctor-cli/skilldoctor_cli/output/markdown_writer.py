@@ -25,6 +25,7 @@ def markdown_for_run(report: dict[str, Any]) -> str:
         f"- Pass rate: {_percent(execution.get('pass_rate'))}",
     ]
     if attribution:
+        steps = attribution.get("steps") or []
         lines.extend(
             [
                 "",
@@ -32,10 +33,29 @@ def markdown_for_run(report: dict[str, Any]) -> str:
                 f"- Cause: `{attribution.get('cause')}`",
                 f"- Action: `{attribution.get('action')}`",
                 f"- Confidence: {_percent(attribution.get('confidence'))}",
+                f"- Fault step: `{attribution.get('t_star')}`",
+                f"- Fault chain: `{attribution.get('fault_chain')}`",
                 "",
                 attribution.get("agent_reason") or attribution.get("explanation") or "",
             ]
         )
+        if steps:
+            lines.extend(
+                [
+                    "",
+                    "### Step-Level Attribution",
+                    "",
+                    "| Step | Source | Label | Passed | Detail |",
+                    "| ---: | --- | --- | --- | --- |",
+                ]
+            )
+            for step in steps[:10]:
+                detail = str(step.get("detail") or "").replace("|", "\\|").replace("\n", " ")
+                if len(detail) > 120:
+                    detail = f"{detail[:119]}…"
+                lines.append(
+                    f"| {step.get('index')} | {step.get('source')} | {step.get('label')} | {step.get('passed')} | {detail} |"
+                )
     if quality:
         lines.extend(
             [
@@ -139,6 +159,7 @@ def markdown_for_compare(report: dict[str, Any]) -> str:
     case_diff = report.get("case_diff") or {}
     quality = report.get("quality") or {}
     cost = report.get("cost") or {}
+    baseline = report.get("baseline") or {}
     lines = [
         "# Skill Doctor Compare",
         "",
@@ -152,6 +173,17 @@ def markdown_for_compare(report: dict[str, Any]) -> str:
         "## Reasons",
     ]
     lines.extend(f"- {reason}" for reason in report.get("reasons", []))
+    if baseline.get("enabled"):
+        lines.extend(
+            [
+                "",
+                "## Baseline",
+                "",
+                f"- Source: `{baseline.get('source')}`",
+                f"- Name: `{baseline.get('name')}`",
+                f"- Path: `{baseline.get('path')}`",
+            ]
+        )
     gate_summary = report.get("gate_summary") or {}
     if gate_summary:
         lines.extend(
@@ -249,11 +281,80 @@ def markdown_for_compare(report: dict[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def markdown_for_repair_preview(report: dict[str, Any]) -> str:
+    target = report.get("target") or {}
+    diagnosis = report.get("diagnosis") or {}
+    proposal = report.get("proposal") or {}
+    mutation = report.get("mutation") or {}
+    risk = report.get("risk") or {}
+    validation = report.get("validation") or {}
+    failed_step = diagnosis.get("failed_step") or {}
+    lines = [
+        "# Skill Doctor Repair Preview",
+        "",
+        f"- Repairable: `{report.get('repairable')}`",
+        f"- Target skill: `{target.get('skill_id')}@{target.get('skill_version')}`",
+        f"- Mode: `{proposal.get('mode')}`",
+        f"- Risk: `{risk.get('level')}`",
+        "",
+        "## Diagnosis",
+        "",
+        f"- Cause: `{diagnosis.get('cause')}`",
+        f"- Action: `{diagnosis.get('action')}`",
+        f"- Fault type: `{diagnosis.get('fault_type')}`",
+        f"- Fault step: `{diagnosis.get('fault_step')}`",
+        f"- Fault chain: `{diagnosis.get('fault_chain')}`",
+    ]
+    if failed_step:
+        lines.extend(
+            [
+                "",
+                "### Failed Step Evidence",
+                "",
+                f"- Step: `{failed_step.get('index')}`",
+                f"- Source: `{failed_step.get('source')}`",
+                f"- Label: `{failed_step.get('label')}`",
+                f"- Detail: {failed_step.get('detail')}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "## Proposal",
+            "",
+            f"- Summary: {proposal.get('summary')}",
+            f"- Suggested change: {proposal.get('suggested_change')}",
+            "",
+            "### Rationale",
+            "",
+            proposal.get("rationale") or "n/a",
+            "",
+            "## Mutation Policy",
+            "",
+            f"- Applies changes: `{mutation.get('applies_changes')}`",
+            f"- Apply policy: `{mutation.get('apply_policy')}`",
+            f"- Message: {mutation.get('message')}",
+        ]
+    )
+    if mutation.get("allowed_next_actions"):
+        lines.extend(["", "### Allowed Next Actions"])
+        lines.extend(f"- `{action}`" for action in mutation.get("allowed_next_actions") or [])
+    lines.extend(["", "## Risk"])
+    for reason in risk.get("reasons") or []:
+        lines.append(f"- {reason}")
+    if validation.get("required"):
+        lines.extend(["", "## Required Validation"])
+        lines.extend(f"- `{command}`" for command in validation.get("commands") or [])
+    return "\n".join(lines).strip() + "\n"
+
+
 def write_markdown_report(report: dict[str, Any], path: str | Path, *, kind: str) -> Path:
     target = Path(path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     if kind == "compare":
         content = markdown_for_compare(report)
+    elif kind == "repair_preview":
+        content = markdown_for_repair_preview(report)
     elif kind in {"bench", "suite"}:
         content = markdown_for_suite(report)
     else:

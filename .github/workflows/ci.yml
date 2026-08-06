@@ -66,6 +66,13 @@ jobs:
 
           skilldoctor \
             --project-root "$PWD" \
+            repair-preview .pytest-tmp-cli-smoke/diagnose.json \
+            --json-out .pytest-tmp-cli-smoke/repair-preview.json \
+            --md-out .pytest-tmp-cli-smoke/repair-preview.md \
+            --quiet
+
+          skilldoctor \
+            --project-root "$PWD" \
             evaluate skilldoctor-cli/examples/traces/healthy-skill-trace.json \
             --min-score 0.60 \
             --min-output-quality 0.90 \
@@ -103,6 +110,34 @@ jobs:
             .pytest-tmp-cli-smoke/bench.json \
             --json-out .pytest-tmp-cli-smoke/compare-baseline.json \
             --quiet
+
+          skilldoctor \
+            --project-root "$PWD" \
+            baseline save .pytest-tmp-cli-smoke/bench.json \
+            --name main \
+            --force
+
+          skilldoctor \
+            --project-root "$PWD" \
+            baseline list
+
+          skilldoctor \
+            --project-root "$PWD" \
+            compare \
+            --baseline-name main \
+            .pytest-tmp-cli-smoke/bench.json \
+            --json-out .pytest-tmp-cli-smoke/compare-named-baseline.json \
+            --quiet
+
+          skilldoctor \
+            --project-root "$PWD" \
+            compare .pytest-tmp-cli-smoke/bench.json \
+            --json-out .pytest-tmp-cli-smoke/compare-auto-baseline.json \
+            --quiet
+
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            cat .pytest-tmp-cli-smoke/compare.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           skilldoctor \
             --project-root "$PWD" \

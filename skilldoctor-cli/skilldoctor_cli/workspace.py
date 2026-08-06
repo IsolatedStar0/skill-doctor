@@ -68,6 +68,19 @@ def default_report_path(project_root: Path, prefix: str, suffix: str = "json") -
     return project_root / "reports" / "cli" / f"{prefix}-{stamp}.{suffix}"
 
 
+def baseline_reports_dir(project_root: Path) -> Path:
+    return project_root / ".skilldoctor" / "baselines"
+
+
+def baseline_report_path(project_root: Path, name: str) -> Path:
+    if not name or not name.strip():
+        raise ValueError("baseline name must be a non-empty string.")
+    baseline_name = name.strip()
+    if Path(baseline_name).name != baseline_name:
+        raise ValueError("baseline name must not contain path separators.")
+    return baseline_reports_dir(project_root) / f"{baseline_name}.json"
+
+
 def first_existing_path(paths: Iterable[str | Path | None]) -> Path | None:
     for raw in paths:
         if raw is None:

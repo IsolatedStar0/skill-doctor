@@ -97,6 +97,7 @@ class AttributionResult(BaseModel):
     ] = "unknown"
     t_star: int | None = None
     fault_chain: list[int] = Field(default_factory=list)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
     improvement_principle: str = ""
     skill_attributions: list[dict[str, Any]] = Field(default_factory=list)
     # -- LLM-authored conclusion (empty when Localizer fell back to rules)

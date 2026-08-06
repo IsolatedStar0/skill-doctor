@@ -27,6 +27,7 @@ from .adaptor import (
     Localizer,
     Qualifier,
     Reviser,
+    TrajectoryStep,
 )
 from .workers import ExecutionWorker
 
@@ -78,6 +79,7 @@ def _normalize_attribution_result(
                 "fault_type": "unknown",
                 "t_star": None,
                 "fault_chain": [],
+                "steps": [],
                 "improvement_principle": "",
                 "skill_attributions": [],
                 "agent_conclusion": "",
@@ -290,6 +292,7 @@ def build_agent_graph(
                 "fault_type": localized.fault_type.value,
                 "t_star": localized.t_star,
                 "fault_chain": localized.fault_chain,
+                "steps": [step.as_dict() for step in localized.steps],
                 "improvement_principle": localized.improvement_principle,
                 "skill_attributions": [a.as_dict() for a in attributions],
                 "agent_conclusion": (
@@ -409,7 +412,17 @@ def build_agent_graph(
             improvement_principle=attribution.improvement_principle,
             wrong_action="",
             observation=attribution.explanation,
-            steps=[],
+            steps=[
+                TrajectoryStep(
+                    index=int(step.get("index", index)),
+                    source=str(step.get("source", "runtime")),
+                    label=str(step.get("label", f"step-{index}")),
+                    passed=bool(step.get("passed", False)),
+                    detail=str(step.get("detail", "")),
+                )
+                for index, step in enumerate(attribution.steps)
+                if isinstance(step, dict)
+            ],
             reason=attribution.explanation,
         )
         head_attribution = _SkillAttribution(
