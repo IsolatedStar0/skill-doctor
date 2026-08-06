@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..backend import backend_modules, new_run_service
+from ..exit_codes import EXIT_BENCH_FAILED, EXIT_OK
 from ..output.console import print_suite_summary
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
@@ -324,4 +325,4 @@ def handle(args: Namespace) -> int:
     if not args.quiet:
         print_suite_summary(report, title="Skill Doctor Bench")
         print(f"report: {report['report_path']}")
-    return 0 if report.get("status") == "passed" else 30
+    return EXIT_OK if report.get("status") == "passed" else EXIT_BENCH_FAILED

@@ -4,6 +4,7 @@ from argparse import Namespace, SUPPRESS
 from pathlib import Path
 from typing import Any
 
+from ..exit_codes import EXIT_COMPARE_REJECTED, EXIT_OK
 from ..output.console import print_compare_summary
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
@@ -402,4 +403,4 @@ def handle(args: Namespace) -> int:
     if not args.quiet:
         print_compare_summary(report)
         print(f"report: {report['report_path']}")
-    return 0 if report["decision"] == "ADOPT" else 40
+    return EXIT_OK if report["decision"] == "ADOPT" else EXIT_COMPARE_REJECTED

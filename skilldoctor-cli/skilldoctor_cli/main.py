@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import baseline, bench, compare, diagnose, evaluate, repair_preview, report
+from .commands import baseline, bench, compare, diagnose, evaluate, ingest, repair_preview, report
+from .exit_codes import EXIT_ERROR, EXIT_INTERRUPTED
 from .workspace import default_project_root
 
 
@@ -22,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skill Doctor repo root. Defaults to the parent of skilldoctor-cli.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for module in (diagnose, evaluate, bench, compare, baseline, repair_preview, report):
+    for module in (diagnose, evaluate, bench, compare, baseline, repair_preview, report, ingest):
         module.register(subcommands)
     return parser
 
@@ -40,10 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.handler(args))
     except KeyboardInterrupt:
-        return 130
+        return EXIT_INTERRUPTED
     except Exception as error:
         print(f"skilldoctor: error: {error}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
 
 if __name__ == "__main__":

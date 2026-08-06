@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..backend import backend_modules, new_run_service
+from ..exit_codes import EXIT_DIAGNOSIS_FAILED, EXIT_OK
 from ..output.console import print_run_summary
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
@@ -42,4 +43,4 @@ def handle(args: Namespace) -> int:
         print(f"report: {report['report_path']}")
         if report.get("markdown_path"):
             print(f"markdown: {report['markdown_path']}")
-    return 0 if state.get("status") == "passed" else 10
+    return EXIT_OK if state.get("status") == "passed" else EXIT_DIAGNOSIS_FAILED

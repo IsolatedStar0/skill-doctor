@@ -4,6 +4,7 @@ import shutil
 from argparse import Namespace, SUPPRESS
 from pathlib import Path
 
+from ..exit_codes import EXIT_OK
 from ..workspace import baseline_report_path, baseline_reports_dir, load_json, utc_now
 
 
@@ -40,18 +41,18 @@ def handle_save(args: Namespace) -> int:
     print(f"baseline saved: {target}")
     print(f"source kind: {report.get('kind')}")
     print(f"saved at: {utc_now()}")
-    return 0
+    return EXIT_OK
 
 
 def handle_list(args: Namespace) -> int:
     root = baseline_reports_dir(args.project_root)
     if not root.exists():
         print("No baselines found.")
-        return 0
+        return EXIT_OK
     baselines = sorted(root.glob("*.json"))
     if not baselines:
         print("No baselines found.")
-        return 0
+        return EXIT_OK
     print("Baselines:")
     for path in baselines:
         try:
@@ -64,4 +65,4 @@ def handle_list(args: Namespace) -> int:
             f" kind={report.get('kind')}"
             f" pass_rate={summary.get('pass_rate')}"
         )
-    return 0
+    return EXIT_OK

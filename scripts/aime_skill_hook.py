@@ -32,7 +32,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-__all__ = ["push_to_skill_doctor", "get_skill_content"]
+__all__ = [
+    "push_to_skill_doctor",
+    "write_trace_dir",
+    "get_skill_content",
+    "normalize_business_result",
+]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENDPOINT = "http://127.0.0.1:8010"
@@ -158,6 +163,216 @@ def _is_nonempty(value: Any) -> bool:
     return True
 
 
+def _clean_detail_item(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, Mapping):
+        return None
+    name = str(item.get("name") or "business_result")
+    status = item.get("status")
+    if status not in {"pass", "fail", "warning"}:
+        status = "warning"
+    reason = item.get("reason")
+    if reason is None:
+        reason = ""
+    return {"name": name, "status": status, "reason": str(reason)}
+
+
+def _truncate_text(value: str, limit: int = 200) -> str:
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def normalize_business_result(business_result: Any) -> Any:
+    """Normalize arbitrary skill business output into skill-doctor contract.
+
+    If ``business_result`` already matches the backend ``BusinessResult`` shape,
+    keep it unchanged. Otherwise, wrap it into a compatible structure and keep
+    the original payload under ``extra.raw_business_result`` for later inspection.
+    """
+
+    if business_result is None:
+        return None
+
+    if isinstance(business_result, Mapping):
+        verdict = business_result.get("verdict")
+        verdict_type = business_result.get("verdict_type")
+        if isinstance(verdict, str) and verdict.strip() and verdict_type in {"pass", "fail", "warning"}:
+            normalized = dict(business_result)
+            details = normalized.get("details")
+            if isinstance(details, list):
+                cleaned_details = [detail for item in details if (detail := _clean_detail_item(item)) is not None]
+                normalized["details"] = cleaned_details
+            elif details is None:
+                normalized["details"] = []
+            else:
+                normalized["details"] = []
+            extra = normalized.get("extra")
+            normalized["extra"] = dict(extra) if isinstance(extra, Mapping) else {}
+            confidence = normalized.get("confidence")
+            if not isinstance(confidence, (int, float)):
+                normalized["confidence"] = None
+            return normalized
+
+        summary_parts: list[str] = []
+        for key in ("summary", "message", "answer", "rca_content"):
+            value = business_result.get(key)
+            if isinstance(value, str) and value.strip():
+                summary_parts.append(value.strip().splitlines()[0])
+                break
+        if not summary_parts:
+            try:
+                summary_parts.append(json.dumps(business_result, ensure_ascii=False, sort_keys=True))
+            except TypeError:
+                summary_parts.append(str(dict(business_result)))
+
+        inferred_type = "warning"
+        if isinstance(business_result.get("rca_filter"), bool):
+            inferred_type = "pass" if business_result.get("rca_filter") else "warning"
+        elif isinstance(business_result.get("passed"), bool):
+            inferred_type = "pass" if business_result.get("passed") else "fail"
+        elif isinstance(business_result.get("success"), bool):
+            inferred_type = "pass" if business_result.get("success") else "fail"
+        elif isinstance(business_result.get("ok"), bool):
+            inferred_type = "pass" if business_result.get("ok") else "fail"
+
+        confidence = business_result.get("confidence")
+        normalized_confidence = confidence if isinstance(confidence, (int, float)) else None
+        return {
+            "verdict": _truncate_text(summary_parts[0]),
+            "verdict_type": inferred_type,
+            "confidence": normalized_confidence,
+            "details": [
+                {
+                    "name": "business_result",
+                    "status": inferred_type,
+                    "reason": _truncate_text(summary_parts[0]),
+                }
+            ],
+            "extra": {"raw_business_result": dict(business_result)},
+        }
+
+    try:
+        summary = json.dumps(business_result, ensure_ascii=False)
+    except TypeError:
+        summary = str(business_result)
+
+    return {
+        "verdict": _truncate_text(summary),
+        "verdict_type": "warning",
+        "confidence": None,
+        "details": [
+            {
+                "name": "business_result",
+                "status": "warning",
+                "reason": "auto-wrapped non-dict business_result",
+            }
+        ],
+        "extra": {"raw_business_result": business_result},
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Trace-dir recording                                                          #
+# --------------------------------------------------------------------------- #
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+    path.write_text(
+        "".join(json.dumps(dict(row), ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def write_trace_dir(
+    trace_dir: str | Path,
+    *,
+    skill_id: str,
+    skill_content: str | None = None,
+    runtime_events: Iterable[Mapping[str, Any]] | None = None,
+    tool_calls: Iterable[Mapping[str, Any]] | None = None,
+    model_messages: Iterable[Mapping[str, Any]] | None = None,
+    business_result: Any = None,
+    task: str | None = None,
+    skill_version: str | None = None,
+    trace_metadata: Mapping[str, Any] | None = None,
+) -> Path | None:
+    """Write an AIME run directory readable by ``skilldoctor ingest``.
+
+    This helper is intentionally stdlib-only and safe for AIME callbacks. It
+    records raw execution channels to separate files instead of POSTing to the
+    backend, so platform integration can be:
+
+    1. AIME writes ``$AIME_RUN_DIR`` via this function.
+    2. A platform post-step runs ``skilldoctor ingest --source aime --trace-dir``.
+
+    Returns the written directory on success. Returns ``None`` and logs to
+    stderr on invalid input or I/O errors; it never raises into the skill flow.
+    """
+
+    try:
+        events_l = list(runtime_events or [])
+        tools_l = list(tool_calls or [])
+        msgs_l = list(model_messages or [])
+
+        if not skill_id:
+            print("[skill-doctor] skip trace-dir: skill_id is required.", file=sys.stderr)
+            return None
+        if not (_is_nonempty(events_l) or _is_nonempty(tools_l) or _is_nonempty(msgs_l)):
+            print(
+                "[skill-doctor] skip trace-dir: runtime_events / tool_calls / "
+                "model_messages are all empty.",
+                file=sys.stderr,
+            )
+            return None
+
+        if skill_content is None:
+            skill_content = get_skill_content(skill_id)
+        normalized_business_result = normalize_business_result(business_result)
+
+        target = Path(trace_dir).expanduser()
+        target.mkdir(parents=True, exist_ok=True)
+
+        metadata: dict[str, Any] = {
+            "skill_id": skill_id,
+            "trace_metadata": {
+                "source": "aime_trace_dir",
+                "skill_runtime": "aime",
+            },
+        }
+        if task:
+            metadata["task"] = task
+        if skill_version:
+            metadata["skill_version"] = skill_version
+        if trace_metadata:
+            merged_metadata = dict(metadata["trace_metadata"])
+            merged_metadata.update(dict(trace_metadata))
+            merged_metadata.setdefault("source", "aime_trace_dir")
+            merged_metadata.setdefault("skill_runtime", "aime")
+            metadata["trace_metadata"] = merged_metadata
+
+        _write_json(target / "metadata.json", metadata)
+        if skill_content:
+            (target / "skill_content.md").write_text(skill_content, encoding="utf-8")
+        if events_l:
+            _write_jsonl(target / "runtime_events.jsonl", events_l)
+        if tools_l:
+            _write_jsonl(target / "tool_calls.jsonl", tools_l)
+        if msgs_l:
+            _write_jsonl(target / "model_messages.jsonl", msgs_l)
+        if normalized_business_result is not None:
+            _write_json(target / "business_result.json", normalized_business_result)
+
+        return target
+    except Exception as exc:  # never leak into the skill's main flow
+        print(f"[skill-doctor] unexpected trace-dir write error: {exc}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # HTTP                                                                        #
 # --------------------------------------------------------------------------- #
@@ -273,6 +488,7 @@ def push_to_skill_doctor(
         # explicit opt-out (do NOT auto-fill in that case).
         if skill_content is None:
             skill_content = get_skill_content(skill_id)
+        normalized_business_result = normalize_business_result(business_result)
 
         merged_metadata: dict[str, Any] = {
             "source": "aime_on_finish_hook",
@@ -296,8 +512,8 @@ def push_to_skill_doctor(
             payload["skill_content"] = skill_content
         if skill_version:
             payload["skill_version"] = skill_version
-        if business_result is not None:
-            payload["business_result"] = business_result
+        if normalized_business_result is not None:
+            payload["business_result"] = normalized_business_result
         if merged_metadata:
             payload["trace_metadata"] = merged_metadata
 
@@ -426,7 +642,7 @@ if __name__ == "__main__":
         runtime_events=demo_runtime_events,
         tool_calls=demo_tool_calls,
         model_messages=demo_model_messages,
-        business_result={"answer": "pong"},
+        business_result=normalize_business_result({"answer": "pong"}),
         task="ping",
         skill_version="0.0.1",
         trace_metadata={"aime_session": "demo-session", "aime_assistant": "ear-agent"},

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..backend import backend_modules, new_run_service
+from ..exit_codes import EXIT_DIAGNOSIS_FAILED, EXIT_OK, EXIT_QUALITY_GATE_FAILED
 from ..output.console import print_run_summary
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
@@ -114,5 +115,5 @@ def handle(args: Namespace) -> int:
         print_run_summary(state, title="Skill Doctor Evaluate")
         print(f"report: {report['report_path']}")
     if state.get("status") != "passed":
-        return 10
-    return 0 if not gate_failures else 20
+        return EXIT_DIAGNOSIS_FAILED
+    return EXIT_OK if not gate_failures else EXIT_QUALITY_GATE_FAILED

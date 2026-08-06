@@ -6,6 +6,35 @@ from types import SimpleNamespace
 from typing import Any
 
 from skilldoctor_cli import main as cli_main
+from skilldoctor_cli.exit_codes import (
+    EXIT_BENCH_FAILED,
+    EXIT_CODE_DESCRIPTIONS,
+    EXIT_COMPARE_REJECTED,
+    EXIT_DIAGNOSIS_FAILED,
+    EXIT_ERROR,
+    EXIT_INTERRUPTED,
+    EXIT_OK,
+    EXIT_QUALITY_GATE_FAILED,
+)
+
+
+def test_exit_codes_are_stable_for_platform_integrations() -> None:
+    assert EXIT_OK == 0
+    assert EXIT_ERROR == 1
+    assert EXIT_DIAGNOSIS_FAILED == 10
+    assert EXIT_QUALITY_GATE_FAILED == 20
+    assert EXIT_BENCH_FAILED == 30
+    assert EXIT_COMPARE_REJECTED == 40
+    assert EXIT_INTERRUPTED == 130
+    assert EXIT_CODE_DESCRIPTIONS == {
+        EXIT_OK: "success",
+        EXIT_ERROR: "general_error",
+        EXIT_DIAGNOSIS_FAILED: "diagnosis_failed",
+        EXIT_QUALITY_GATE_FAILED: "quality_gate_failed",
+        EXIT_BENCH_FAILED: "bench_failed",
+        EXIT_COMPARE_REJECTED: "compare_rejected",
+        EXIT_INTERRUPTED: "interrupted",
+    }
 
 
 class _TraceRequest:
@@ -28,6 +57,12 @@ class _DiagnosticSuiteRequest:
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_jsonl(path: Path, payloads: list[dict[str, Any]]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(item) for item in payloads), encoding="utf-8")
     return path
 
 
@@ -98,6 +133,198 @@ def test_diagnose_writes_reports_and_returns_skill_failure_code(
     assert "Skill Doctor Report" in markdown
     assert "Step-Level Attribution" in markdown
     assert "tool.call" in markdown
+
+
+def test_ingest_aime_reads_platform_trace_and_marks_source_adapter(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import ingest
+
+    trace_path = _write_json(
+        tmp_path / "aime-trace.json",
+        {
+            "task": "diagnose AIME skill run",
+            "skill_id": "aime-demo-skill",
+            "skill_version": "1.0.0",
+            "runtime_events": [
+                {
+                    "stage": "aime.noise_judge",
+                    "status": "completed",
+                    "message": "confidence=0.64 below threshold",
+                }
+            ],
+            "tool_calls": [
+                {"name": "fetch_metric", "status": "completed", "arguments": {"metric": "uv"}}
+            ],
+            "model_messages": [{"role": "assistant", "content": "rca_filter=true confidence=0.64"}],
+            "trace_metadata": {"aime_session": "session-1"},
+        },
+    )
+    json_out = tmp_path / "ingest.json"
+    captured: dict[str, Any] = {}
+    state = {
+        "run_id": "lg-aime-ingest",
+        "status": "failed",
+        "skill_id": "aime-demo-skill",
+        "skill_version": "1.0.0",
+        "execution": {"executor": "aime-skill-trace", "pass_rate": 0.75},
+        "attribution": {
+            "cause": "skill",
+            "action": "patch_skill",
+            "t_star": 0,
+            "fault_chain": [0],
+            "steps": [
+                {
+                    "index": 0,
+                    "source": "runtime",
+                    "label": "aime.noise_judge",
+                    "passed": False,
+                    "detail": "confidence=0.64 below threshold",
+                }
+            ],
+        },
+    }
+
+    def ingest_trace(request: dict[str, Any]) -> dict[str, Any]:
+        captured["request"] = request
+        return state
+
+    monkeypatch.setattr(ingest, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        ingest,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=ingest_trace),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "ingest",
+            str(trace_path),
+            "--source",
+            "aime",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_DIAGNOSIS_FAILED
+    assert captured["request"]["trace_metadata"] == {
+        "aime_session": "session-1",
+        "source": "aime_cli_ingest",
+        "skill_runtime": "aime",
+    }
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["kind"] == "diagnose"
+    assert report["ingest"] == {
+        "source": "aime",
+        "adapter": "aime_cli_ingest",
+        "input_mode": "trace_file",
+        "trace_path": str(trace_path),
+    }
+    assert report["state"]["execution"]["executor"] == "aime-skill-trace"
+
+
+def test_ingest_aime_reads_raw_trace_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import ingest
+
+    trace_dir = tmp_path / "aime-run-001"
+    _write_json(
+        trace_dir / "metadata.json",
+        {
+            "task": "diagnose AIME run directory",
+            "skill_id": "aime-directory-skill",
+            "skill_version": "2.0.0",
+            "aime_session": "session-dir",
+            "aime_assistant": "assistant-dir",
+            "trace_metadata": {"tenant": "demo"},
+        },
+    )
+    (trace_dir / "skill_content.md").write_text("# AIME skill\nFollow confidence threshold.", encoding="utf-8")
+    _write_jsonl(
+        trace_dir / "runtime_events.jsonl",
+        [
+            {"stage": "aime.start", "status": "completed", "message": "started"},
+            {"stage": "aime.noise_judge", "status": "completed", "message": "confidence=0.64"},
+        ],
+    )
+    _write_json(
+        trace_dir / "tool_calls.json",
+        [{"name": "fetch_metric", "status": "completed", "arguments": {"metric": "uv"}}],
+    )
+    _write_jsonl(
+        trace_dir / "model_messages.jsonl",
+        [{"role": "assistant", "content": "rca_filter=true confidence=0.64"}],
+    )
+    _write_json(trace_dir / "business_result.json", {"rca_filter": True, "confidence": 0.64})
+    json_out = tmp_path / "ingest-dir.json"
+    captured: dict[str, Any] = {}
+    state = {
+        "run_id": "lg-aime-dir-ingest",
+        "status": "failed",
+        "skill_id": "aime-directory-skill",
+        "skill_version": "2.0.0",
+        "execution": {"executor": "aime-skill-trace", "pass_rate": 0.75},
+        "attribution": {"cause": "skill", "action": "patch_skill", "confidence": 0.88},
+    }
+
+    def ingest_trace(request: dict[str, Any]) -> dict[str, Any]:
+        captured["request"] = request
+        return state
+
+    monkeypatch.setattr(ingest, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        ingest,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=ingest_trace),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "ingest",
+            "--source",
+            "aime",
+            "--trace-dir",
+            str(trace_dir),
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_DIAGNOSIS_FAILED
+    assert captured["request"]["skill_id"] == "aime-directory-skill"
+    assert captured["request"]["skill_version"] == "2.0.0"
+    assert captured["request"]["skill_content"] == "# AIME skill\nFollow confidence threshold."
+    assert [item["stage"] for item in captured["request"]["runtime_events"]] == [
+        "aime.start",
+        "aime.noise_judge",
+    ]
+    assert captured["request"]["tool_calls"][0]["name"] == "fetch_metric"
+    assert captured["request"]["model_messages"][0]["role"] == "assistant"
+    assert captured["request"]["business_result"] == {"rca_filter": True, "confidence": 0.64}
+    assert captured["request"]["trace_metadata"] == {
+        "tenant": "demo",
+        "aime_session": "session-dir",
+        "aime_assistant": "assistant-dir",
+        "source": "aime_cli_ingest",
+        "skill_runtime": "aime",
+    }
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["ingest"] == {
+        "source": "aime",
+        "adapter": "aime_cli_ingest",
+        "input_mode": "trace_dir",
+        "trace_dir": str(trace_dir),
+    }
 
 
 def test_evaluate_returns_quality_gate_code_when_score_is_low(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from argparse import Namespace
 from pathlib import Path
 
+from ..exit_codes import EXIT_OK
 from ..output.markdown_writer import write_markdown_report
 from ..workspace import default_report_path, load_json
 
@@ -26,4 +27,4 @@ def handle(args: Namespace) -> int:
     md_path = args.md_out or default_report_path(args.project_root, "report", suffix="md")
     written = write_markdown_report(report, md_path, kind=kind)
     print(f"markdown: {written}")
-    return 0
+    return EXIT_OK

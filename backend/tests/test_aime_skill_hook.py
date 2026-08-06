@@ -3,7 +3,7 @@ import json
 from scripts import aime_skill_hook
 
 
-def test_push_to_skill_doctor_sends_business_result_as_top_level_payload(
+def test_push_to_skill_doctor_preserves_standard_business_result(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -59,6 +59,51 @@ def test_push_to_skill_doctor_sends_business_result_as_top_level_payload(
     assert captured["timeout"] == 12.5
     assert payload["business_result"] == business_result
     assert "business_result" not in payload["trace_metadata"]
+
+
+def test_push_to_skill_doctor_wraps_legacy_business_result_shape(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_post(
+        endpoint: str,
+        api_key: str | None,
+        payload: dict[str, object],
+        timeout: float,
+    ) -> tuple[int, str]:
+        del endpoint, api_key, timeout
+        captured.update(payload)
+        return 200, json.dumps({"run_id": "lg-test", "status": "passed"})
+
+    monkeypatch.setattr(aime_skill_hook, "_post", fake_post)
+
+    aime_skill_hook.push_to_skill_doctor(
+        skill_id="puck-rule-rca",
+        runtime_events=[
+            {"stage": "aime.done", "status": "completed", "message": "done"}
+        ],
+        business_result={
+            "rca_filter": False,
+            "rca_content": "当前异常不建议降噪\n- default:历史不同，不降噪",
+            "rca_detail": [{"group_detail_name": "default"}],
+            "confidence": 0.58,
+        },
+        endpoint="https://doctor.example",
+        api_key="secret-token",
+    )
+
+    normalized = captured["business_result"]
+    assert normalized["verdict"] == "当前异常不建议降噪"
+    assert normalized["verdict_type"] == "warning"
+    assert normalized["confidence"] == 0.58
+    assert normalized["details"][0] == {
+        "name": "business_result",
+        "status": "warning",
+        "reason": "当前异常不建议降噪",
+    }
+    assert normalized["extra"]["raw_business_result"]["rca_filter"] is False
+    assert normalized["extra"]["raw_business_result"]["rca_detail"] == [{"group_detail_name": "default"}]
 
 
 def test_push_to_skill_doctor_standardizes_trace_metadata_without_dropping_aime_ids(
@@ -136,3 +181,76 @@ def test_push_to_skill_doctor_preserves_explicit_source_metadata(
     metadata = captured_payload["trace_metadata"]
     assert metadata["source"] == "custom_aime_bridge"
     assert metadata["skill_runtime"] == "aime-canary"
+
+
+def test_write_trace_dir_records_aime_run_for_cli_ingest(tmp_path) -> None:
+    trace_dir = tmp_path / "aime-run-001"
+    written = aime_skill_hook.write_trace_dir(
+        trace_dir,
+        skill_id="puck-rule-rca",
+        skill_content="# puck-rule-rca\nKeep confidence calibrated.",
+        runtime_events=[
+            {"stage": "aime.start", "status": "completed", "message": "started"},
+            {"stage": "aime.noise_judge", "status": "completed", "message": "confidence=0.64"},
+        ],
+        tool_calls=[{"name": "fetch_metric", "status": "completed", "arguments": {"metric": "uv"}}],
+        model_messages=[{"role": "assistant", "content": "rca_filter=true confidence=0.64"}],
+        business_result={"rca_filter": True, "confidence": 0.64},
+        task="diagnose metric anomaly",
+        skill_version="1.0.0",
+        trace_metadata={"aime_session": "session-123", "aime_assistant": "ear-agent"},
+    )
+
+    assert written == trace_dir
+    metadata = json.loads((trace_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata == {
+        "skill_id": "puck-rule-rca",
+        "trace_metadata": {
+            "source": "aime_trace_dir",
+            "skill_runtime": "aime",
+            "aime_session": "session-123",
+            "aime_assistant": "ear-agent",
+        },
+        "task": "diagnose metric anomaly",
+        "skill_version": "1.0.0",
+    }
+    assert (trace_dir / "skill_content.md").read_text(encoding="utf-8") == (
+        "# puck-rule-rca\nKeep confidence calibrated."
+    )
+    runtime_events = [
+        json.loads(line)
+        for line in (trace_dir / "runtime_events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [item["stage"] for item in runtime_events] == ["aime.start", "aime.noise_judge"]
+    tool_calls = [
+        json.loads(line)
+        for line in (trace_dir / "tool_calls.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert tool_calls[0]["name"] == "fetch_metric"
+    model_messages = [
+        json.loads(line)
+        for line in (trace_dir / "model_messages.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert model_messages[0]["role"] == "assistant"
+    business_result = json.loads((trace_dir / "business_result.json").read_text(encoding="utf-8"))
+    assert business_result == {
+        "verdict": '{"confidence": 0.64, "rca_filter": true}',
+        "verdict_type": "pass",
+        "confidence": 0.64,
+        "details": [
+            {
+                "name": "business_result",
+                "status": "pass",
+                "reason": '{"confidence": 0.64, "rca_filter": true}',
+            }
+        ],
+        "extra": {"raw_business_result": {"rca_filter": True, "confidence": 0.64}},
+    }
+
+
+def test_write_trace_dir_skips_empty_trace(tmp_path, capsys) -> None:
+    written = aime_skill_hook.write_trace_dir(tmp_path / "empty", skill_id="demo")
+
+    assert written is None
+    assert not (tmp_path / "empty").exists()
+    assert "skip trace-dir" in capsys.readouterr().err

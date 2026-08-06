@@ -4,6 +4,7 @@ from argparse import Namespace, SUPPRESS
 from pathlib import Path
 from typing import Any
 
+from ..exit_codes import EXIT_OK
 from ..output.json_writer import write_json_report
 from ..output.markdown_writer import write_markdown_report
 from ..workspace import default_report_path, load_json, utc_now
@@ -156,4 +157,4 @@ def handle(args: Namespace) -> int:
         print(f"report: {preview['report_path']}")
         if preview.get("markdown_path"):
             print(f"markdown: {preview['markdown_path']}")
-    return 0
+    return EXIT_OK

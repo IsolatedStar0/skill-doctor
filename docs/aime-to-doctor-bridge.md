@@ -78,16 +78,20 @@ The puck-rule-rca skill correctly identified the anomaly as noise
 最小接入示例：
 
 ```python
-from scripts.aime_skill_hook import push_to_skill_doctor
+from scripts.aime_skill_hook import normalize_business_result, push_to_skill_doctor
 
 def on_finish(ctx):
+    # 推荐写法：先显式标准化，再 push。
+    # 这样业务输出是 puck-rule-rca 这类旧结构时，也能稳定兼容 skill-doctor 后端。
+    business_result = normalize_business_result(ctx.final_output)
+
     push_to_skill_doctor(
         skill_id       = ctx.skill_id,
-        skill_content  = ctx.skill_body,           # 原文，DeepSeek 会读它
+        skill_content  = ctx.skill_body,           # 原文，skill-doctor 会读它
         runtime_events = ctx.runtime_events,       # [{stage,status,message}, ...]
         tool_calls     = ctx.tool_calls,           # [{name,status,arguments,result}, ...]
         model_messages = ctx.model_messages,       # [{role,content}, ...]
-        business_result= ctx.final_output,         # 会挂到 trace_metadata.business_result
+        business_result= business_result,          # 顶层 business_result，兼容后端契约
         task           = ctx.user_query,
         trace_metadata = {"aime_session": ctx.session_id, "aime_assistant": ctx.assistant_id},
         # endpoint / api_key 可省略，默认取 .env
