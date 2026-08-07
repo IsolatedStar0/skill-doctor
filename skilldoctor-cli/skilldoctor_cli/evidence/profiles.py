@@ -20,8 +20,17 @@ PUCK_RULE_RCA_PROFILE = SkillProfile(
     high_confidence_requires_artifact_types=("chart", "timeseries"),
 )
 
+RELEASE_CHECKLIST_PROFILE = SkillProfile(
+    skill_id="release-checklist",
+    required_checks=("rollback-gate-present",),
+    critical_checks=("rollback-gate-present",),
+    min_evidence_score=0.75,
+)
+
+
 PROFILES = {
     PUCK_RULE_RCA_PROFILE.skill_id: PUCK_RULE_RCA_PROFILE,
+    RELEASE_CHECKLIST_PROFILE.skill_id: RELEASE_CHECKLIST_PROFILE,
 }
 
 

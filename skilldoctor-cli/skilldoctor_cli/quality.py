@@ -125,7 +125,12 @@ def _trace_evidence_strength(
     return strength, reasons
 
 
-def _puck_reason_signals(reason_text: str, *, has_chart: bool, confidence: float | None) -> dict[str, Any]:
+def _puck_reason_signals(
+    reason_text: str,
+    *,
+    has_chart: bool,
+    confidence: float | None,
+) -> dict[str, Any]:
     mentions_today = any(token in reason_text for token in ("today", "今日", "当天", "三天"))
     mentions_history = any(
         token in reason_text
@@ -158,9 +163,25 @@ def _puck_reason_signals(reason_text: str, *, has_chart: bool, confidence: float
     ):
         weak_similarity = True
 
+    history_gap_terms = (
+        "历史无结果",
+        "历史没有结果",
+        "历史无数据",
+        "历史没有数据",
+        "无历史数据",
+        "历史覆盖不完整",
+        "历史覆盖分段且不完整",
+        "历史窗口不完整",
+        "历史窗口缺失",
+        "历史数据缺失",
+        "历史缺失",
+    )
+    history_evidence_gap = any(token in reason_text for token in history_gap_terms)
+
     return {
         "specific_comparison": specific_comparison,
         "weak_similarity": weak_similarity,
+        "history_evidence_gap": history_evidence_gap,
         "reason": (
             "依据同时比较 today 与历史窗口，并包含趋势/形态/峰谷等形态特征。"
             if specific_comparison
@@ -205,6 +226,8 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
     evidence_bundle = normalize_evidence_bundle(business, raw)
     evidence_score = score_evidence_bundle(evidence_bundle, profile, confidence=confidence)
     specific_comparison = bool(reason_signals["specific_comparison"])
+    filter_decision = raw.get("rca_filter")
+    affirmative_history_gap = filter_decision is True and bool(reason_signals["history_evidence_gap"])
     structured_inconsistent = bool(
         evidence_score.get("failed_checks") or evidence_score.get("failed_critical_checks")
     )
@@ -302,6 +325,10 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
     ]
     score = sum(item["weight"] for item in checks if item["passed"])
     failed = [item for item in checks if not item["passed"]]
+    findings = [item["reason"] for item in failed]
+    if affirmative_history_gap:
+        score = min(score, 0.74)
+        findings.append("降噪结论存在历史证据缺口：依据明示历史无结果、无数据或覆盖/窗口不完整。")
     return {
         "skill_id": "puck-rule-rca",
         "score": round(_clamp(score), 4),
@@ -311,8 +338,95 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
         "evidence_profile": profile.skill_id,
         "evidence_score": evidence_score,
         "checks": checks,
-        "findings": [item["reason"] for item in failed],
+        "findings": findings,
     }
+
+
+def _release_check_status(state: dict[str, Any], check_id: str) -> tuple[bool | None, str]:
+    execution = state.get("execution") or {}
+    normalized_id = check_id.replace("_", "-").lower()
+    for assertion in execution.get("assertions") or []:
+        assertion_id = str(
+            assertion.get("id") or assertion.get("name") or ""
+        ).replace("_", "-").lower()
+        if assertion_id == normalized_id:
+            passed = assertion.get("passed")
+            if isinstance(passed, bool):
+                return passed, _text(assertion.get("detail") or assertion.get("reason"))
+
+    business = state.get("business_result") or {}
+    if not isinstance(business, dict):
+        return None, ""
+    aliases = {
+        normalized_id,
+        normalized_id.removesuffix("-present"),
+        normalized_id.replace("-gate-present", "-gate"),
+    }
+    for detail in business.get("details") or []:
+        if not isinstance(detail, dict):
+            continue
+        name = str(detail.get("name") or detail.get("id") or "").replace("_", "-").lower()
+        if name not in aliases:
+            continue
+        status = str(detail.get("status") or "").lower()
+        if status in {"pass", "passed", "ok", "success"}:
+            return True, _text(detail.get("reason") or detail.get("detail"))
+        if status in {"fail", "failed", "error", "warning"}:
+            return False, _text(detail.get("reason") or detail.get("detail"))
+    return None, ""
+
+
+def _score_release_checklist_domain(state: dict[str, Any]) -> dict[str, Any] | None:
+    if str(state.get("skill_id") or "").lower() != "release-checklist":
+        return None
+
+    profile = get_skill_profile("release-checklist")
+    specs = (
+        ("rollback-gate-present", 0.8, True),
+        ("validation-gate-present", 0.1, False),
+        ("approval-gate-present", 0.1, False),
+    )
+    score = 1.0
+    checks: list[dict[str, Any]] = []
+    findings: list[str] = []
+    for name, weight, required in specs:
+        passed, detail = _release_check_status(state, name)
+        effective_passed = passed is True if required else passed is not False
+        if not effective_passed:
+            score -= weight
+        if passed is not None or required:
+            reason = detail or (
+                f"{name} 已通过。"
+                if effective_passed
+                else f"缺少或未通过必要检查 {name}。"
+            )
+            checks.append(_check(name, effective_passed, reason, weight))
+            if not effective_passed:
+                findings.append(reason)
+
+    score = _clamp(score)
+    return {
+        "skill_id": "release-checklist",
+        "score": round(score, 4),
+        "passed": score >= profile.min_evidence_score,
+        "evidence_profile": profile.skill_id,
+        "checks": checks,
+        "findings": findings,
+    }
+
+
+DOMAIN_SCORERS = (
+    _score_puck_rule_rca_domain,
+    _score_release_checklist_domain,
+)
+
+
+def _score_domain(state: dict[str, Any]) -> dict[str, Any] | None:
+    for scorer in DOMAIN_SCORERS:
+        result = scorer(state)
+        if result is not None:
+            return result
+    return None
 
 
 def score_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -352,7 +466,7 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
         "safety_boundary": 0.65 if attribution.get("cause") in {"tool", "platform"} else 0.9,
         "stability": _clamp(1.0 - regression_rate - (0.1 if state.get("status") == "failed" else 0.0)),
     }
-    domain_quality = _score_puck_rule_rca_domain(state)
+    domain_quality = _score_domain(state)
     weights = {
         "output_quality": 0.30,
         "contract_compliance": 0.20,
@@ -416,7 +530,7 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
 
     if domain_quality is not None:
         reasons["domain_quality"].append(
-            f"puck-rule-rca 领域评分为 {domain_quality['score']:.2f}。"
+            f"{domain_quality['skill_id']} 领域评分为 {domain_quality['score']:.2f}。"
         )
         for finding in domain_quality.get("findings") or []:
             reasons["domain_quality"].append(finding)
@@ -431,7 +545,9 @@ def score_state(state: dict[str, Any]) -> dict[str, Any]:
     if failed_events:
         findings.append(f"存在 {len(failed_events)} 个失败事件，成功链路稳定性不足。")
     if domain_quality is not None and not domain_quality.get("passed"):
-        findings.append("puck-rule-rca 领域质量不足：业务结论、证据或置信度存在风险。")
+        findings.append(
+            f"{domain_quality['skill_id']} 领域质量不足：业务结论、证据或必要检查存在风险。"
+        )
     score_breakdown = {
         name: {
             "score": round(dimensions[name], 4),

@@ -92,14 +92,47 @@ def _expected_good(record: dict[str, Any], prediction_correct: bool | None) -> b
     return prediction_correct
 
 
+def _nested_value(payload: Any, key: str) -> Any:
+    """Return the first non-empty value for key from a native puck payload."""
+    if isinstance(payload, dict):
+        value = payload.get(key)
+        if value is not None and value != "":
+            return value
+        for nested_key in ("rca_detail", "details", "extra"):
+            nested = payload.get(nested_key)
+            value = _nested_value(nested, key)
+            if value is not None and value != "":
+                return value
+    elif isinstance(payload, list):
+        for item in payload:
+            value = _nested_value(item, key)
+            if value is not None and value != "":
+                return value
+    return None
+
+
 def _confidence(agent_output: dict[str, Any], raw: dict[str, Any]) -> float | None:
-    value = agent_output.get("confidence")
+    value = _nested_value(agent_output, "confidence")
     if value is None:
-        value = raw.get("confidence")
+        value = _nested_value(raw, "confidence")
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _detail_items(agent_output: dict[str, Any], raw: dict[str, Any]) -> list[dict[str, Any]]:
+    for payload in (agent_output, raw):
+        details = payload.get("details")
+        if not isinstance(details, list):
+            rca_detail = payload.get("rca_detail")
+            if isinstance(rca_detail, list):
+                details = rca_detail
+            elif isinstance(rca_detail, dict):
+                details = rca_detail.get("details")
+        if isinstance(details, list):
+            return [item for item in details if isinstance(item, dict)]
+    return []
 
 
 def _state_from_label(record: dict[str, Any]) -> dict[str, Any]:
@@ -110,13 +143,15 @@ def _state_from_label(record: dict[str, Any]) -> dict[str, Any]:
     rationale = str(
         agent_output.get("rationale")
         or agent_output.get("reason")
+        or agent_output.get("rca_content")
+        or _nested_value(agent_output.get("rca_detail"), "rca_content")
         or raw.get("rationale")
         or raw.get("rca_content")
         or ""
     ).strip()
-    chart_url = agent_output.get("chart_url") or raw.get("chart_url")
-    details = []
-    if chart_url:
+    chart_url = _nested_value(agent_output, "chart_url") or _nested_value(raw, "chart_url")
+    details = _detail_items(agent_output, raw)
+    if chart_url and not details:
         details.append(
             {
                 "name": "chart_evidence",
@@ -124,6 +159,13 @@ def _state_from_label(record: dict[str, Any]) -> dict[str, Any]:
                 "reason": rationale or "提供了图表证据。",
             }
         )
+    raw_business_result = {**raw, **agent_output}
+    raw_business_result.setdefault("rca_filter", prediction)
+    raw_business_result.setdefault("rca_content", rationale)
+    raw_business_result.setdefault("confidence", confidence)
+    raw_business_result.setdefault("rca_detail", details)
+    if chart_url:
+        raw_business_result.setdefault("chart_url", chart_url)
     artifacts = {"chart_url": chart_url} if chart_url else {}
     runtime_events = []
     if chart_url:
@@ -144,15 +186,7 @@ def _state_from_label(record: dict[str, Any]) -> dict[str, Any]:
             "verdict_type": "pass" if prediction else "warning",
             "confidence": confidence,
             "details": details,
-            "extra": {
-                "raw_business_result": {
-                    "rca_filter": prediction,
-                    "rca_content": rationale,
-                    "confidence": confidence,
-                    "rca_detail": details,
-                    "chart_url": chart_url,
-                }
-            },
+            "extra": {"raw_business_result": raw_business_result},
         },
         "execution": {
             "passed": True,
