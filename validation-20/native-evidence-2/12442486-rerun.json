@@ -1,0 +1,103 @@
+{
+  "case_id": "puck-rule-rca-0715-12442486",
+  "task_id": 181975,
+  "dispatch_id": 12442486,
+  "rule": "浏览深度",
+  "business_result": {
+    "rca_filter": false,
+    "rca_content": "当前存在真实异常，不能整体降噪\n- -:发布后与历史不同，不降噪",
+    "rca_detail": [
+      {
+        "group_detail_name": "-",
+        "is_regular": true,
+        "filter": false,
+        "rationale": "day-1/day-2均呈连续、可复现的起伏与缓降；today发布后从约6千持续跌至约5百并长期低位，重点区间的范围和峰谷分布均明显背离历史，不能降噪。",
+        "confidence": 0.98,
+        "chart_url": ""
+      }
+    ]
+  },
+  "native_evidence": {
+    "data_preparation": {
+      "source": "OpenAPI getRuleMetricInfo via scripts/fetch_rule_metric_info.py",
+      "datasource_type": "metrics",
+      "vregion": "China-North",
+      "group_detail_name": "-",
+      "group_key_values": {},
+      "deploy_begin_time": "2026-07-15 18:52:22",
+      "given_start": 1784109142,
+      "given_end": 1784123324,
+      "dispatch_version": 1784123384591
+    },
+    "target_series_filter": {
+      "method": "无 groupBy 且返回仅一条 tags={} 序列，保留该唯一目标序列",
+      "matched_series_per_window": 1
+    },
+    "query_parameters_summary": {
+      "tool": "metrics_13.metrics_api_query",
+      "metric": "data.life.mall_api.mall_list_v4.count",
+      "tenant": "default",
+      "aggregator": "sum",
+      "vregion": "China-North",
+      "downsample": "30s-avg",
+      "multi_field_expr": "counter",
+      "rate": false,
+      "counter": false,
+      "filters": [
+        {"tagk": "handler", "filter": "list_main", "type": "literal_or", "groupBy": false},
+        {"tagk": "cursor", "filter": "24|32|40", "type": "literal_or", "groupBy": false}
+      ],
+      "top_k_adaptation": "metric_detail top-50-max 按契约扩为 top-100-max；MCP schema 无独立 Top-K 入参，未改变其他口径",
+      "windows_ms": {
+        "today": [1784107342000, 1784123324000],
+        "day-1": [1784019142000, 1784038724000],
+        "day-2": [1783932742000, 1783952324000]
+      },
+      "execution": "三个窗口在同一轮并发发起，无单窗口探测、无重复查询"
+    },
+    "windows": {
+      "today": {
+        "point_count": 533,
+        "coverage_cst": "2026-07-15 17:22:30~2026-07-15 21:48:30",
+        "key_shape": "前段约4千~8千连续波动；发布后约18分钟开始持续下滑，约19:30跌至千以下，随后约500~700长期低位平台至结束。",
+        "raw_mcp_output_path": "validation-20/native-evidence-2/12442486-today-mcp.json"
+      },
+      "day-1": {
+        "point_count": 653,
+        "coverage_cst": "2026-07-14 16:52:30~2026-07-14 22:18:30",
+        "key_shape": "约4千~11千连续起伏，峰谷反复且后段渐缓下降；对应发布后区间仍维持数千量级，无低位断崖平台。",
+        "raw_mcp_output_path": "validation-20/native-evidence-2/12442486-day-1-mcp.json"
+      },
+      "day-2": {
+        "point_count": 653,
+        "coverage_cst": "2026-07-13 16:52:30~2026-07-13 22:18:30",
+        "key_shape": "约4千~9千连续周期起伏并逐步缓降；对应区间仍在数千量级反复波动，无今日约500的持续低位平台。",
+        "raw_mcp_output_path": "validation-20/native-evidence-2/12442486-day-2-mcp.json"
+      }
+    },
+    "judgement": {
+      "deploy_anchor_cst": "2026-07-15 18:52:22",
+      "history_pattern": "day-1/day-2均有明显连续、可复现的起伏及缓降规律",
+      "today_difference": "today在发布后出现历史两窗均不存在的持续大幅下移和新低位基线",
+      "decision": "is_regular=true, filter=false"
+    }
+  },
+  "bridge_status": {
+    "status": "completed",
+    "trace_dir": "validation-20/native-evidence-2/skilldoctor-trace/afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180",
+    "runs_dir": "validation-20/native-evidence-2/skilldoctor-runs",
+    "ingest_exit_code": 0
+  },
+  "hook_status": {
+    "status": "completed",
+    "run_id": "lg-092c82800f57",
+    "skill_doctor_status": "passed"
+  },
+  "validate_labels": {
+    "status": "passed",
+    "total": 1,
+    "skipped": 0,
+    "prediction_accuracy": 1.0,
+    "false_accept_rate": 0.0
+  }
+}

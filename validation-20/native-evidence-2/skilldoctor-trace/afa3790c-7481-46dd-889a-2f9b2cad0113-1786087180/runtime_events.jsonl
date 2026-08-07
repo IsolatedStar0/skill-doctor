@@ -1,0 +1,6 @@
+{"stage": "input_parse", "status": "completed", "message": "taskId/id 齐全，确认不画图"}
+{"stage": "openapi_data_preparation", "status": "completed", "message": "datasource_type=metrics, vregion=China-North, group_detail_name=-"}
+{"stage": "three_window_query", "status": "completed", "message": "today/day-1/day-2 同轮并发完成；点数 533/653/653"}
+{"stage": "target_series_filter", "status": "completed", "message": "无 groupBy，唯一 tags={} 序列保留"}
+{"stage": "trend_judgement", "status": "completed", "message": "历史规律，但 today 发布后持续跌至新低位基线，filter=false"}
+{"stage": "final_result", "status": "completed", "message": "生成有效业务 JSON 与 native evidence"}

@@ -1,0 +1,122 @@
+{
+  "case_id": "puck-rule-rca-0715-12373227",
+  "task_id": 181508,
+  "dispatch_id": 12373227,
+  "rule_name": "TLB视角接口失败QPS",
+  "execution_time": "2026-08-07T15:15:00+08:00",
+  "input": {
+    "vregion": "China-North",
+    "group_detail_name": "=/life/v1/dito/prepare_page/init_pre_request/.429",
+    "chart_requested": false
+  },
+  "openapi_preparation": {
+    "status": "success",
+    "datasource_type": "metrics",
+    "deploy_begin_time": "2026-07-15 15:12:41",
+    "vregion": "China-North",
+    "given_start": 1784095961,
+    "given_end": 1784101841,
+    "dispatch_version": 1784101901919,
+    "group_key_values": {
+      "route": "=/life/v1/dito/prepare_page/init_pre_request/",
+      "status": "429"
+    }
+  },
+  "native_evidence": {
+    "query_execution": {
+      "status": "success",
+      "concurrency": "today/day-1/day-2 同一轮并发发起，无单窗口探测、无重复查询",
+      "datasource": "metrics_13.metrics_api_query",
+      "query_parameter_summary": {
+        "metric": "tlb.http.request",
+        "tenant": "sys.tlb",
+        "aggregator": "sum",
+        "downsample": "30s-avg",
+        "multi_field_expr": "count.rate",
+        "rate": false,
+        "counter": true,
+        "vregion": "China-North",
+        "top_k_normalization": "metric_detail top-50-max 按契约扩大为 top-100-max；metrics_13 API schema 无 Top-K 入参字段，未向工具传递非 schema 参数",
+        "filters": [
+          {"tagk": "route", "filter": "*", "type": "iliteral_or", "groupBy": true},
+          {"tagk": "ignore", "filter": "-", "type": "literal_or", "groupBy": false},
+          {"tagk": "status", "filter": "4*", "type": "literal_or", "groupBy": true},
+          {"tagk": "service", "filter": "data.life.trade_prepare", "type": "literal_or", "groupBy": false},
+          {"tagk": "service_cluster", "filter": "*", "type": "literal_or", "groupBy": false}
+        ],
+        "windows_ms": {
+          "today": {"start": 1784094161000, "end": 1784101841000},
+          "day-1": {"start": 1784005961000, "end": 1784017241000},
+          "day-2": {"start": 1783919561000, "end": 1783930841000}
+        }
+      }
+    },
+    "target_series_filter": {
+      "strategy": "group_key_values 精确匹配",
+      "matched_tags": {
+        "route": "=/life/v1/dito/prepare_page/init_pre_request/",
+        "status": "429"
+      },
+      "matched_in_all_windows": true
+    },
+    "windows": {
+      "today": {
+        "query_range_utc": "2026-07-15T05:42:41Z/2026-07-15T07:50:41Z",
+        "point_count": 88,
+        "coverage_utc": "2026-07-15T07:06:30Z/2026-07-15T07:50:30Z",
+        "coverage_epoch_seconds": [1784099190, 1784101830],
+        "key_shape": "发布锚点后从近零连续爬升，15:31（CST）后进入更高基线并反复上冲，尾部达到约11.42后收于约9.52；属于连续升高走势而非单个孤立尖刺。",
+        "raw_mcp_output_path": "/workspace/iris_afa3790c-7481-46dd-889a-2f9b2cad0113/mcp_outputs/mcp_metrics_13_metrics_api_query_954286ff_66db_4701_8ba0_b59e3baced08_1786086962014.txt"
+      },
+      "day-1": {
+        "query_range_utc": "2026-07-14T05:12:41Z/2026-07-14T08:20:41Z",
+        "point_count": 120,
+        "coverage_utc": "2026-07-14T05:13:00Z/2026-07-14T08:20:30Z",
+        "coverage_epoch_seconds": [1784005980, 1784017230],
+        "key_shape": "首点为零且中间长时间无点，约15:18（CST）起由低位连续爬升，后段快速升至约48.49并收于约41.23；与today同为连续上升结构但幅度更大。",
+        "raw_mcp_output_path": "/workspace/iris_afa3790c-7481-46dd-889a-2f9b2cad0113/mcp_outputs/mcp_metrics_13_metrics_api_query_862fb4ba_93dd_4f57_b7ca_61cdea65ebae_1786086973927.txt"
+      },
+      "day-2": {
+        "query_range_utc": "2026-07-13T05:12:41Z/2026-07-13T08:20:41Z",
+        "point_count": 102,
+        "coverage_utc": "2026-07-13T05:13:00Z/2026-07-13T08:20:30Z",
+        "coverage_epoch_seconds": [1783919580, 1783930830],
+        "key_shape": "大部分窗口由稀疏零值、断点及零散短促脉冲构成，峰值出现时间杂乱；仅尾段不规则升至约3.50并收于约2.16，缺乏与today可复用的连续规律结构。",
+        "raw_mcp_output_path": "/workspace/iris_afa3790c-7481-46dd-889a-2f9b2cad0113/mcp_outputs/mcp_metrics_13_metrics_api_query_11b4dd90_638a_473d_b93f_a348c43fed03_1786086991044.txt"
+      }
+    },
+    "deploy_anchor_assessment": "重点区间为 today 2026-07-15 15:12:41 CST 至 15:50:41 CST。today 在该区间持续抬升；day-1 对应时段也有上升结构，但 day-2 对应时段仍以断点和随机脉冲为主，无法提供规律性同比支撑。"
+  },
+  "business_result": {
+    "rca_filter": false,
+    "rca_content": "当前异常不需要降噪\n- =/life/v1/dito/prepare_page/init_pre_request/.429:day-2无规律，不降噪",
+    "rca_detail": [
+      {
+        "group_detail_name": "=/life/v1/dito/prepare_page/init_pre_request/.429",
+        "is_regular": false,
+        "filter": null,
+        "rationale": "today发布后由低位连续升至约11.42；day-1亦连续升至约48.49，但day-2长期稀疏、以零散脉冲和断点为主，仅尾段不规则升至约3.50，无法与today形成有意义的规律对照，不满足两条历史线均具相似结构的适用条件，当前异常不需要降噪。",
+        "confidence": 0.96,
+        "chart_url": ""
+      }
+    ]
+  },
+  "integration_status": {
+    "skilldoctor_bridge": {
+      "status": "completed",
+      "trace_dir": "/workspace/iris_afa3790c-7481-46dd-889a-2f9b2cad0113/skilldoctor-trace/afa3790c-7481-46dd-889a-2f9b2cad0113-1786087157",
+      "runs_dir": "/workspace/iris_afa3790c-7481-46dd-889a-2f9b2cad0113/skilldoctor-runs",
+      "ingest_exit_code": 0
+    },
+    "aime_skill_hook": {
+      "normalize_business_result": "completed",
+      "push_to_skill_doctor": "completed",
+      "run_id": "lg-72e7b823c834",
+      "status": "passed"
+    }
+  },
+  "manual_expectation": {
+    "expected_filter": false,
+    "reason": "day-2 数据波动没有规律"
+  }
+}

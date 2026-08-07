@@ -1,0 +1,17 @@
+{
+  "status": "completed",
+  "skill_id": "puck-rule-rca",
+  "trace_dir": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207/validation-20/native-evidence-2/skilldoctor-trace/afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180",
+  "runs_dir": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207/validation-20/native-evidence-2/skilldoctor-runs",
+  "project_root": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207",
+  "bridge_aime_run": {
+    "mode": "trace-dir",
+    "trace_dir": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207/validation-20/native-evidence-2/skilldoctor-trace/afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180",
+    "snapshot": null,
+    "status": "trace_dir_written"
+  },
+  "ingest_exit_code": 0,
+  "ingest_stdout": "",
+  "ingest_stderr": "",
+  "report_path": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207/validation-20/native-evidence-2/skilldoctor-runs/ingest-aime-afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180.json"
+}

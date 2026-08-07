@@ -1,0 +1,55 @@
+{
+  "verdict": "当前存在真实异常，不能整体降噪",
+  "verdict_type": "warning",
+  "confidence": null,
+  "details": [
+    {
+      "name": "business_result",
+      "status": "warning",
+      "reason": "当前存在真实异常，不能整体降噪"
+    }
+  ],
+  "extra": {
+    "raw_business_result": {
+      "rca_filter": false,
+      "rca_content": "当前存在真实异常，不能整体降噪\n- -:发布后与历史不同，不降噪",
+      "rca_detail": [
+        {
+          "group_detail_name": "-",
+          "is_regular": true,
+          "filter": false,
+          "rationale": "day-1/day-2均呈连续、可复现的起伏与缓降；today发布后从约6千持续跌至约5百并长期低位，重点区间的范围和峰谷分布均明显背离历史，不能降噪。",
+          "confidence": 0.98,
+          "chart_url": ""
+        }
+      ],
+      "evidence": {
+        "checks": [
+          {
+            "name": "history_regular",
+            "passed": true,
+            "score": null,
+            "severity": "high",
+            "reason": "从 puck-rule-rca is_regular/rca_detail 推导历史窗口是否规律。"
+          },
+          {
+            "name": "today_vs_day1_similar",
+            "passed": false,
+            "score": null,
+            "severity": "critical",
+            "reason": "从 puck-rule-rca filter/rca_filter 推导 today 与历史窗口是否相似。"
+          },
+          {
+            "name": "today_vs_day2_similar",
+            "passed": false,
+            "score": null,
+            "severity": "critical",
+            "reason": "从 puck-rule-rca filter/rca_filter 推导 today 与历史窗口是否相似。"
+          }
+        ],
+        "artifacts": [],
+        "metrics": {}
+      }
+    }
+  }
+}

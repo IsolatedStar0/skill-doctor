@@ -1,0 +1,679 @@
+{
+  "schema_version": "1.0",
+  "kind": "diagnose",
+  "ingest": {
+    "source": "aime",
+    "adapter": "aime_cli_ingest",
+    "input_mode": "trace_dir",
+    "trace_dir": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207/validation-20/native-evidence-2/skilldoctor-trace/afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180",
+    "trace_schema_version": "1.0"
+  },
+  "state": {
+    "run_kind": "agent",
+    "run_id": "lg-9d2ab6f8fffe",
+    "parent_run_id": null,
+    "task": "case_id=puck-rule-rca-0715-12442486; taskId=181975; dispatch_id=12442486; 浏览深度；不画图",
+    "skill_id": "puck-rule-rca",
+    "skill_version": "unknown",
+    "skill_content": "",
+    "executor": "trace-ingest",
+    "scenario": "content-gap",
+    "condition": "standard",
+    "repair_enabled": true,
+    "attempt": 0,
+    "max_attempts": 1,
+    "status": "passed",
+    "stop_reason": "initial_execution_passed",
+    "business_result": {
+      "verdict": "当前存在真实异常，不能整体降噪",
+      "verdict_type": "warning",
+      "confidence": null,
+      "details": [
+        {
+          "name": "business_result",
+          "status": "warning",
+          "reason": "当前存在真实异常，不能整体降噪"
+        }
+      ],
+      "extra": {
+        "raw_business_result": {
+          "rca_filter": false,
+          "rca_content": "当前存在真实异常，不能整体降噪\n- -:发布后与历史不同，不降噪",
+          "rca_detail": [
+            {
+              "group_detail_name": "-",
+              "is_regular": true,
+              "filter": false,
+              "rationale": "day-1/day-2均呈连续、可复现的起伏与缓降；today发布后从约6千持续跌至约5百并长期低位，重点区间的范围和峰谷分布均明显背离历史，不能降噪。",
+              "confidence": 0.98,
+              "chart_url": ""
+            }
+          ],
+          "evidence": {
+            "checks": [
+              {
+                "name": "history_regular",
+                "passed": true,
+                "score": null,
+                "severity": "high",
+                "reason": "从 puck-rule-rca is_regular/rca_detail 推导历史窗口是否规律。"
+              },
+              {
+                "name": "today_vs_day1_similar",
+                "passed": false,
+                "score": null,
+                "severity": "critical",
+                "reason": "从 puck-rule-rca filter/rca_filter 推导 today 与历史窗口是否相似。"
+              },
+              {
+                "name": "today_vs_day2_similar",
+                "passed": false,
+                "score": null,
+                "severity": "critical",
+                "reason": "从 puck-rule-rca filter/rca_filter 推导 today 与历史窗口是否相似。"
+              }
+            ],
+            "artifacts": [],
+            "metrics": {}
+          }
+        }
+      }
+    },
+    "execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 6 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 3 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 1 model message(s); assistant=1, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 6 runtime event(s), 3 tool call(s) and 1 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "input_parse",
+          "status": "completed",
+          "message": "taskId/id 齐全，确认不画图",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "openapi_data_preparation",
+          "status": "completed",
+          "message": "datasource_type=metrics, vregion=China-North, group_detail_name=-",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "three_window_query",
+          "status": "completed",
+          "message": "today/day-1/day-2 同轮并发完成；点数 533/653/653",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "target_series_filter",
+          "status": "completed",
+          "message": "无 groupBy，唯一 tags={} 序列保留",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "trend_judgement",
+          "status": "completed",
+          "message": "历史规律，但 today 发布后持续跌至新低位基线，filter=false",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "final_result",
+          "status": "completed",
+          "message": "生成有效业务 JSON 与 native evidence",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=6, tool_calls=3, model_messages=1, trace_metadata_keys=10.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_assistant",
+              "aime_run_id",
+              "aime_session",
+              "aime_trace_id",
+              "artifact_dir",
+              "case_id",
+              "dispatch_id",
+              "skill_runtime",
+              "source",
+              "task_id"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 6 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 6,
+            "failed": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_input_tokens": 0,
+            "reasoning_tokens": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 3 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 3,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 1 model message(s) (assistant=1, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 1,
+            "assistant": 1,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 10 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_assistant",
+              "aime_run_id",
+              "aime_session",
+              "aime_trace_id",
+              "artifact_dir",
+              "case_id",
+              "dispatch_id",
+              "skill_runtime",
+              "source",
+              "task_id"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 6 runtime event(s), 3 tool call(s) and 1 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "baseline_execution": {
+      "executor": "aime-skill-trace",
+      "condition": "standard",
+      "task_kind": "knowledge-probe",
+      "passed": true,
+      "pass_rate": 1.0,
+      "duration_ms": 0,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_input_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "assertions": [
+        {
+          "id": "runtime-events-clean",
+          "source": "system",
+          "passed": true,
+          "detail": "All 6 runtime events completed."
+        },
+        {
+          "id": "tool-calls-healthy",
+          "source": "system",
+          "passed": true,
+          "detail": "All 3 tool call(s) succeeded."
+        },
+        {
+          "id": "model-dialog-clean",
+          "source": "skill",
+          "passed": true,
+          "detail": "Reviewed 1 model message(s); assistant=1, tool=0."
+        }
+      ],
+      "regression_rate": 0.0,
+      "summary": "Agent analysis found no issues across 6 runtime event(s), 3 tool call(s) and 1 model message(s).",
+      "artifacts": {},
+      "runtime_events": [
+        {
+          "stage": "input_parse",
+          "status": "completed",
+          "message": "taskId/id 齐全，确认不画图",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "openapi_data_preparation",
+          "status": "completed",
+          "message": "datasource_type=metrics, vregion=China-North, group_detail_name=-",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "three_window_query",
+          "status": "completed",
+          "message": "today/day-1/day-2 同轮并发完成；点数 533/653/653",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "target_series_filter",
+          "status": "completed",
+          "message": "无 groupBy，唯一 tags={} 序列保留",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "trend_judgement",
+          "status": "completed",
+          "message": "历史规律，但 today 发布后持续跌至新低位基线，filter=false",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "final_result",
+          "status": "completed",
+          "message": "生成有效业务 JSON 与 native evidence",
+          "usage": null,
+          "metadata": {}
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "started",
+          "message": "Uploaded trace received: runtime_events=6, tool_calls=3, model_messages=1, trace_metadata_keys=10.",
+          "usage": null,
+          "metadata": {
+            "skill_id": "puck-rule-rca",
+            "condition": "standard",
+            "has_prior_execution": false,
+            "trace_metadata_keys": [
+              "aime_assistant",
+              "aime_run_id",
+              "aime_session",
+              "aime_trace_id",
+              "artifact_dir",
+              "case_id",
+              "dispatch_id",
+              "skill_runtime",
+              "source",
+              "task_id"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.runtime_events",
+          "status": "completed",
+          "message": "Inspected 6 runtime event(s); failures=0.",
+          "usage": null,
+          "metadata": {
+            "count": 6,
+            "failed": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_input_tokens": 0,
+            "reasoning_tokens": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.tool_calls",
+          "status": "completed",
+          "message": "Reviewed 3 tool call(s); failed=0.",
+          "usage": null,
+          "metadata": {
+            "total": 3,
+            "failed": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.model_messages",
+          "status": "completed",
+          "message": "Reviewed 1 model message(s) (assistant=1, tool=0).",
+          "usage": null,
+          "metadata": {
+            "total": 1,
+            "assistant": 1,
+            "tool": 0
+          }
+        },
+        {
+          "stage": "agent.analyze.metadata",
+          "status": "completed",
+          "message": "Read 10 trace metadata field(s).",
+          "usage": null,
+          "metadata": {
+            "keys": [
+              "aime_assistant",
+              "aime_run_id",
+              "aime_session",
+              "aime_trace_id",
+              "artifact_dir",
+              "case_id",
+              "dispatch_id",
+              "skill_runtime",
+              "source",
+              "task_id"
+            ]
+          }
+        },
+        {
+          "stage": "agent.analyze.summarize",
+          "status": "completed",
+          "message": "Agent analysis found no issues across 6 runtime event(s), 3 tool call(s) and 1 model message(s).",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "assertion_count": 3,
+            "findings": []
+          }
+        },
+        {
+          "stage": "agent.analyze",
+          "status": "completed",
+          "message": "Uploaded trace analysis complete.",
+          "usage": null,
+          "metadata": {
+            "passed": true,
+            "pass_rate": 1.0,
+            "findings_count": 0
+          }
+        }
+      ],
+      "error": null
+    },
+    "evidence_snapshot": {
+      "schema_version": "1.0",
+      "run_id": "lg-9d2ab6f8fffe",
+      "attempt": 0,
+      "skill_id": "puck-rule-rca",
+      "condition": "standard",
+      "execution_sha256": "d340f360d12689b6bcd1d26aa1ecb5ba5ce0e751290ff6d34efdac7682c7e926",
+      "assertion_sha256": "488d2a01b587da03d7c28fb149482ed757de95ed607baaad9d1dbdf2500b3183",
+      "artifact_refs": []
+    },
+    "observability": {
+      "provider": "langsmith",
+      "enabled": false,
+      "status": "disabled",
+      "project": "skill-doctor-dev"
+    },
+    "events": [
+      {
+        "sequence": 1,
+        "stage": "prepare",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Prepared puck-rule-rca@unknown.",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 2,
+        "stage": "input_parse",
+        "status": "completed",
+        "attempt": 0,
+        "message": "taskId/id 齐全，确认不画图",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 3,
+        "stage": "openapi_data_preparation",
+        "status": "completed",
+        "attempt": 0,
+        "message": "datasource_type=metrics, vregion=China-North, group_detail_name=-",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 4,
+        "stage": "three_window_query",
+        "status": "completed",
+        "attempt": 0,
+        "message": "today/day-1/day-2 同轮并发完成；点数 533/653/653",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 5,
+        "stage": "target_series_filter",
+        "status": "completed",
+        "attempt": 0,
+        "message": "无 groupBy，唯一 tags={} 序列保留",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 6,
+        "stage": "trend_judgement",
+        "status": "completed",
+        "attempt": 0,
+        "message": "历史规律，但 today 发布后持续跌至新低位基线，filter=false",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 7,
+        "stage": "final_result",
+        "status": "completed",
+        "attempt": 0,
+        "message": "生成有效业务 JSON 与 native evidence",
+        "usage": null,
+        "metadata": {}
+      },
+      {
+        "sequence": 8,
+        "stage": "agent.analyze",
+        "status": "started",
+        "attempt": 0,
+        "message": "Uploaded trace received: runtime_events=6, tool_calls=3, model_messages=1, trace_metadata_keys=10.",
+        "usage": null,
+        "metadata": {
+          "skill_id": "puck-rule-rca",
+          "condition": "standard",
+          "has_prior_execution": false,
+          "trace_metadata_keys": [
+            "aime_assistant",
+            "aime_run_id",
+            "aime_session",
+            "aime_trace_id",
+            "artifact_dir",
+            "case_id",
+            "dispatch_id",
+            "skill_runtime",
+            "source",
+            "task_id"
+          ]
+        }
+      },
+      {
+        "sequence": 9,
+        "stage": "agent.analyze.runtime_events",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Inspected 6 runtime event(s); failures=0.",
+        "usage": null,
+        "metadata": {
+          "count": 6,
+          "failed": 0,
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cached_input_tokens": 0,
+          "reasoning_tokens": 0
+        }
+      },
+      {
+        "sequence": 10,
+        "stage": "agent.analyze.tool_calls",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Reviewed 3 tool call(s); failed=0.",
+        "usage": null,
+        "metadata": {
+          "total": 3,
+          "failed": 0
+        }
+      },
+      {
+        "sequence": 11,
+        "stage": "agent.analyze.model_messages",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Reviewed 1 model message(s) (assistant=1, tool=0).",
+        "usage": null,
+        "metadata": {
+          "total": 1,
+          "assistant": 1,
+          "tool": 0
+        }
+      },
+      {
+        "sequence": 12,
+        "stage": "agent.analyze.metadata",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Read 10 trace metadata field(s).",
+        "usage": null,
+        "metadata": {
+          "keys": [
+            "aime_assistant",
+            "aime_run_id",
+            "aime_session",
+            "aime_trace_id",
+            "artifact_dir",
+            "case_id",
+            "dispatch_id",
+            "skill_runtime",
+            "source",
+            "task_id"
+          ]
+        }
+      },
+      {
+        "sequence": 13,
+        "stage": "agent.analyze.summarize",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Agent analysis found no issues across 6 runtime event(s), 3 tool call(s) and 1 model message(s).",
+        "usage": null,
+        "metadata": {
+          "passed": true,
+          "pass_rate": 1.0,
+          "assertion_count": 3,
+          "findings": []
+        }
+      },
+      {
+        "sequence": 14,
+        "stage": "agent.analyze",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Uploaded trace analysis complete.",
+        "usage": null,
+        "metadata": {
+          "passed": true,
+          "pass_rate": 1.0,
+          "findings_count": 0
+        }
+      },
+      {
+        "sequence": 15,
+        "stage": "execute",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Agent analysis found no issues across 6 runtime event(s), 3 tool call(s) and 1 model message(s).",
+        "usage": null,
+        "metadata": {
+          "condition": "standard",
+          "pass_rate": 1.0,
+          "executor": "aime-skill-trace"
+        }
+      },
+      {
+        "sequence": 16,
+        "stage": "collect_evidence",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Created a hash-addressed Evidence Snapshot.",
+        "usage": null,
+        "metadata": {
+          "execution_sha256": "d340f360d12689b6bcd1d26aa1ecb5ba5ce0e751290ff6d34efdac7682c7e926",
+          "artifact_count": 0
+        }
+      },
+      {
+        "sequence": 17,
+        "stage": "finalize",
+        "status": "completed",
+        "attempt": 0,
+        "message": "Run finished: initial_execution_passed.",
+        "usage": null,
+        "metadata": {}
+      }
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "summary": {
+    "total": 1,
+    "skipped": 0,
+    "prediction_correct": 1,
+    "prediction_incorrect": 0,
+    "prediction_accuracy": 1.0,
+    "filter_confusion": {
+      "tp": 0,
+      "tn": 1,
+      "fp": 0,
+      "fn": 0
+    },
+    "false_positive_rate": 0.0,
+    "false_negative_rate": 0.0,
+    "quality_labeled": 1,
+    "quality_correct": 1,
+    "quality_accuracy": 1.0,
+    "quality_confusion": {
+      "true_accept": 1,
+      "true_reject": 0,
+      "false_accept": 0,
+      "false_reject": 0
+    },
+    "false_accept_rate": 0.0
+  },
+  "cases": [
+    {
+      "case_id": "puck-rule-rca-0715-12442486",
+      "predicted_filter": false,
+      "expected_filter": false,
+      "prediction_correct": true,
+      "expected_quality_good": true,
+      "domain_quality_score": 0.92,
+      "domain_quality_passed": true,
+      "quality_prediction_correct": true,
+      "rule_name": null,
+      "group_detail_name": null,
+      "findings": [
+        "trace 中缺少可用证据支撑。"
+      ]
+    }
+  ],
+  "skipped": [],
+  "schema_version": "1.0",
+  "kind": "validate_labels",
+  "label_set_path": "validation-20/native-evidence-2/12442486-label.jsonl",
+  "domain_quality_threshold": 0.75,
+  "generated_at": "2026-08-07T07:21:14Z",
+  "quality_gate": {
+    "passed": true,
+    "failures": []
+  },
+  "report_path": "validation-20/native-evidence-2/12442486-validation.json",
+  "markdown_path": "validation-20/native-evidence-2/12442486-validation.md"
+}

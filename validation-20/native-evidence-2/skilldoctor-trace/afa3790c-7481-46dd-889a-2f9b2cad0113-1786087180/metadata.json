@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "skill_id": "puck-rule-rca",
+  "trace_metadata": {
+    "source": "aime_trace_dir",
+    "skill_runtime": "aime",
+    "case_id": "puck-rule-rca-0715-12442486",
+    "task_id": 181975,
+    "dispatch_id": 12442486,
+    "artifact_dir": "/mnt/propagation/sources/projects-skill-doctor-9df3346a9ba2f207/validation-20/native-evidence-2",
+    "aime_session": "afa3790c-7481-46dd-889a-2f9b2cad0113",
+    "aime_assistant": "d0d8d6f3-98a8-4dfe-9c6a-1a453a207fa8",
+    "aime_trace_id": "afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180",
+    "aime_run_id": "afa3790c-7481-46dd-889a-2f9b2cad0113-1786087180"
+  },
+  "task": "case_id=puck-rule-rca-0715-12442486; taskId=181975; dispatch_id=12442486; 浏览深度；不画图"
+}

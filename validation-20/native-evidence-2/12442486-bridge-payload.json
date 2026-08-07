@@ -1,0 +1,33 @@
+{
+  "skill_id": "puck-rule-rca",
+  "task": "case_id=puck-rule-rca-0715-12442486; taskId=181975; dispatch_id=12442486; 浏览深度；不画图",
+  "runtime_events": [
+    {"stage": "input_parse", "status": "completed", "message": "taskId/id 齐全，确认不画图"},
+    {"stage": "openapi_data_preparation", "status": "completed", "message": "datasource_type=metrics, vregion=China-North, group_detail_name=-"},
+    {"stage": "three_window_query", "status": "completed", "message": "today/day-1/day-2 同轮并发完成；点数 533/653/653"},
+    {"stage": "target_series_filter", "status": "completed", "message": "无 groupBy，唯一 tags={} 序列保留"},
+    {"stage": "trend_judgement", "status": "completed", "message": "历史规律，但 today 发布后持续跌至新低位基线，filter=false"},
+    {"stage": "final_result", "status": "completed", "message": "生成有效业务 JSON 与 native evidence"}
+  ],
+  "tool_calls": [
+    {"name": "scripts/fetch_rule_metric_info.py", "status": "completed", "arguments": {"task_id": 181975, "id": 12442486}},
+    {"name": "metrics_13.metrics_get_metrics_api_access_key", "status": "completed", "arguments": {"vregion": "China-North"}},
+    {"name": "metrics_13.metrics_api_query", "status": "completed", "arguments": {"metric": "data.life.mall_api.mall_list_v4.count", "windows": ["today", "day-1", "day-2"], "downsample": "30s-avg", "concurrent": true}, "result": {"point_counts": [533, 653, 653], "raw_paths": ["validation-20/native-evidence-2/12442486-today-mcp.json", "validation-20/native-evidence-2/12442486-day-1-mcp.json", "validation-20/native-evidence-2/12442486-day-2-mcp.json"]}}
+  ],
+  "model_messages": [
+    {"role": "assistant", "content": "依据完整三窗口原生时序肉眼判断：历史两窗规律，today 发布后结构性背离，不降噪。"}
+  ],
+  "business_result": {
+    "rca_filter": false,
+    "rca_content": "当前存在真实异常，不能整体降噪\n- -:发布后与历史不同，不降噪",
+    "rca_detail": [
+      {"group_detail_name": "-", "is_regular": true, "filter": false, "rationale": "day-1/day-2均呈连续、可复现的起伏与缓降；today发布后从约6千持续跌至约5百并长期低位，重点区间的范围和峰谷分布均明显背离历史，不能降噪。", "confidence": 0.98, "chart_url": ""}
+    ]
+  },
+  "trace_metadata": {
+    "case_id": "puck-rule-rca-0715-12442486",
+    "task_id": 181975,
+    "dispatch_id": 12442486,
+    "artifact_dir": "validation-20/native-evidence-2"
+  }
+}

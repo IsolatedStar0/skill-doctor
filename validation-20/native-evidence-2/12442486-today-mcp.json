@@ -1,0 +1,26 @@
+{
+  "capture_type": "native_mcp_result_evidence",
+  "tool": "metrics_13.metrics_api_query",
+  "window": "today",
+  "metric": "data.life.mall_api.mall_list_v4.count",
+  "series_count": 1,
+  "tags": {},
+  "point_count": 533,
+  "first_point": {"timestamp": 1784107350, "value": 5454.0},
+  "last_point": {"timestamp": 1784123310, "value": 610.0},
+  "coverage_cst": "2026-07-15 17:22:30~2026-07-15 21:48:30",
+  "mcp_stats": {"read_dps": 148691, "read_series": 40513, "read_bytes": 144182314, "read_files": 128, "arestor_scan_series": 1936715, "arestor_hit_series": 40513},
+  "native_shape_points": [
+    {"timestamp": 1784107350, "value": 5454.0},
+    {"timestamp": 1784109120, "value": 7431.0},
+    {"timestamp": 1784111130, "value": 8145.0},
+    {"timestamp": 1784112740, "value": 6311.0},
+    {"timestamp": 1784113800, "value": 4625.0},
+    {"timestamp": 1784114520, "value": 1569.0},
+    {"timestamp": 1784114820, "value": 967.0},
+    {"timestamp": 1784115000, "value": 691.0},
+    {"timestamp": 1784116800, "value": 592.0},
+    {"timestamp": 1784123310, "value": 610.0}
+  ],
+  "capture_note": "原始 MCP 响应为单序列 533 个完整 30 秒点；本文件保留响应元数据、首尾点及用于人工形态复核的原生关键点，未用于额外算法计算。"
+}
