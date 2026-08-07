@@ -739,6 +739,271 @@ def test_evaluate_fails_domain_gate_for_weak_puck_rule_rca_result(
     )
 
 
+def test_evaluate_allows_specific_puck_rule_rca_shape_comparison_without_chart(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "specific-puck-rule-rca-trace.json", {"skill_id": "puck-rule-rca"})
+    json_out = tmp_path / "evaluate-specific-domain.json"
+    state = {
+        "run_id": "lg-test-specific-puck-rca",
+        "status": "passed",
+        "skill_id": "puck-rule-rca",
+        "skill_version": "1.0.0",
+        "business_result": {
+            "verdict": "today 与 day-1/day-2 连续下行，峰谷节奏一致，尾部收敛形态基本一致。",
+            "verdict_type": "pass",
+            "confidence": 0.91,
+            "details": [],
+            "extra": {
+                "raw_business_result": {
+                    "rca_filter": True,
+                    "rca_content": "today 与 day-1/day-2 连续下行，峰谷节奏一致，尾部收敛形态基本一致。",
+                    "confidence": 0.91,
+                }
+            },
+        },
+        "execution": {"passed": True, "pass_rate": 1.0, "duration_ms": 1_000, "assertions": [], "runtime_events": []},
+        "attribution": {"cause": "none", "action": "none"},
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.50",
+            "--min-domain-quality",
+            "0.75",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_OK
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    domain = report["quality"]["domain_quality"]
+    assert domain["score"] >= 0.75
+    assert domain["passed"] is True
+
+
+def test_evaluate_penalizes_weak_similarity_puck_rule_rca_claim(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "weak-similarity-puck-rule-rca-trace.json", {"skill_id": "puck-rule-rca"})
+    json_out = tmp_path / "evaluate-weak-similarity-domain.json"
+    state = {
+        "run_id": "lg-test-weak-similarity-puck-rca",
+        "status": "passed",
+        "skill_id": "puck-rule-rca",
+        "skill_version": "1.0.0",
+        "business_result": {
+            "verdict": "三天曲线均为连续起伏，today 整体落在两条历史线之间并与历史同步走弱。",
+            "verdict_type": "pass",
+            "confidence": 0.88,
+            "details": [{"name": "chart_evidence", "status": "pass", "reason": "提供了图表证据。"}],
+            "extra": {
+                "raw_business_result": {
+                    "rca_filter": True,
+                    "rca_content": "三天曲线均为连续起伏，today 整体落在两条历史线之间并与历史同步走弱。",
+                    "confidence": 0.88,
+                    "rca_detail": [{"name": "chart_evidence"}],
+                    "chart_url": "https://example.com/weak.png",
+                }
+            },
+        },
+        "execution": {
+            "passed": True,
+            "pass_rate": 1.0,
+            "duration_ms": 1_000,
+            "assertions": [],
+            "artifacts": {"chart_url": "https://example.com/weak.png"},
+            "runtime_events": [
+                {"stage": "agent.analyze.tool_calls", "status": "completed", "metadata": {"total": 1}}
+            ],
+        },
+        "attribution": {"cause": "none", "action": "none", "evidence_refs": ["artifact:chart_url"]},
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.50",
+            "--min-domain-quality",
+            "0.75",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_QUALITY_GATE_FAILED
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    domain = report["quality"]["domain_quality"]
+    assert domain["score"] < 0.75
+    assert any("弱相似性" in finding for finding in domain["findings"])
+
+
+def test_validate_labels_reports_prediction_and_quality_metrics(tmp_path: Path) -> None:
+    labels_path = _write_jsonl(
+        tmp_path / "labels.jsonl",
+        [
+            {
+                "case_id": "good-filter",
+                "skill_id": "puck-rule-rca",
+                "input": {"rule_name": "Error Log数量", "group_detail_name": "all"},
+                "agent_output": {
+                    "filter": True,
+                    "rationale": "today 与 day-1/day-2 趋势形态相似，峰谷分布一致，建议降噪。",
+                    "confidence": 0.86,
+                    "chart_url": "https://example.com/good.png",
+                },
+                "manual_label": {"should_filter": True, "result_accuracy": "accurate"},
+                "expectation": {"business_quality": "good", "expected_filter": True},
+            },
+            {
+                "case_id": "bad-caught",
+                "skill_id": "puck-rule-rca",
+                "input": {"rule_name": "严格授权", "group_detail_name": "default"},
+                "agent_output": {
+                    "filter": True,
+                    "rationale": "今日与历史窗口趋势一致，属于规律性波动",
+                    "confidence": 0.9,
+                    "chart_url": None,
+                },
+                "manual_label": {"should_filter": False, "result_accuracy": "inaccurate"},
+                "expectation": {"business_quality": "bad", "expected_filter": False},
+            },
+            {
+                "case_id": "good-not-filter",
+                "skill_id": "puck-rule-rca",
+                "input": {"rule_name": "超时数量", "group_detail_name": "all"},
+                "agent_output": {
+                    "filter": False,
+                    "rationale": "today 与历史窗口差异明显，波动超过历史范围，不建议降噪。",
+                    "confidence": 0.72,
+                    "chart_url": "https://example.com/not-filter.png",
+                },
+                "manual_label": {"should_filter": False, "result_accuracy": "accurate"},
+                "expectation": {"business_quality": "good", "expected_filter": False},
+            },
+        ],
+    )
+    json_out = tmp_path / "validate-labels.json"
+    md_out = tmp_path / "validate-labels.md"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "validate-labels",
+            str(labels_path),
+            "--min-prediction-accuracy",
+            "0.66",
+            "--min-quality-accuracy",
+            "0.90",
+            "--max-false-accept-rate",
+            "0.0",
+            "--json-out",
+            str(json_out),
+            "--md-out",
+            str(md_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_OK
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["kind"] == "validate_labels"
+    assert report["summary"]["total"] == 3
+    assert report["summary"]["prediction_accuracy"] == 0.6667
+    assert report["summary"]["filter_confusion"] == {"tp": 1, "tn": 1, "fp": 1, "fn": 0}
+    assert report["summary"]["quality_accuracy"] == 1.0
+    assert report["summary"]["quality_confusion"] == {
+        "true_accept": 2,
+        "true_reject": 1,
+        "false_accept": 0,
+        "false_reject": 0,
+    }
+    assert report["quality_gate"] == {"passed": True, "failures": []}
+    markdown = md_out.read_text(encoding="utf-8")
+    assert "Label Validation" in markdown
+    assert "Filter Decision Confusion" in markdown
+    assert "Worst Domain Quality Cases" in markdown
+
+
+def test_validate_labels_fails_gate_for_false_accepts(tmp_path: Path) -> None:
+    labels_path = _write_jsonl(
+        tmp_path / "labels-false-accept.jsonl",
+        [
+            {
+                "case_id": "false-accept",
+                "skill_id": "puck-rule-rca",
+                "agent_output": {
+                    "filter": True,
+                    "rationale": "today 与 day-1/day-2 波动范围、峰谷分布相似，符合规律性波动特征。",
+                    "confidence": 0.88,
+                    "chart_url": "https://example.com/false-accept.png",
+                },
+                "manual_label": {"should_filter": False, "result_accuracy": "inaccurate"},
+                "expectation": {"business_quality": "bad", "expected_filter": False},
+            }
+        ],
+    )
+    json_out = tmp_path / "validate-labels-fail.json"
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "validate-labels",
+            str(labels_path),
+            "--min-quality-accuracy",
+            "0.80",
+            "--max-false-accept-rate",
+            "0.0",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_QUALITY_GATE_FAILED
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    assert report["summary"]["quality_accuracy"] == 0.0
+    assert report["summary"]["false_accept_rate"] == 1.0
+    assert [item["name"] for item in report["quality_gate"]["failures"]] == [
+        "quality_accuracy",
+        "false_accept_rate",
+    ]
+
+
 def test_bench_loads_jsonl_skips_comments_and_returns_failure_code(
     tmp_path: Path,
     monkeypatch,

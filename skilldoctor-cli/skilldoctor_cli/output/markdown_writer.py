@@ -300,6 +300,61 @@ def markdown_for_compare(report: dict[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def markdown_for_label_validation(report: dict[str, Any]) -> str:
+    summary = report.get("summary") or {}
+    confusion = summary.get("filter_confusion") or {}
+    quality_confusion = summary.get("quality_confusion") or {}
+    lines = [
+        "# Skill Doctor Label Validation",
+        "",
+        f"- Label set: `{report.get('label_set_path')}`",
+        f"- Domain quality threshold: `{report.get('domain_quality_threshold')}`",
+        f"- Total: `{summary.get('total', 0)}`",
+        f"- Skipped: `{summary.get('skipped', 0)}`",
+        f"- Prediction accuracy: {_percent(summary.get('prediction_accuracy'))}",
+        f"- Quality accuracy: {_percent(summary.get('quality_accuracy'))}",
+        f"- False accept rate: {_percent(summary.get('false_accept_rate'))}",
+        "",
+        "## Filter Decision Confusion",
+        "",
+        "| TP | TN | FP | FN |",
+        "| ---: | ---: | ---: | ---: |",
+        f"| {confusion.get('tp', 0)} | {confusion.get('tn', 0)} | {confusion.get('fp', 0)} | {confusion.get('fn', 0)} |",
+        "",
+        "## Domain Quality Confusion",
+        "",
+        "| True Accept | True Reject | False Accept | False Reject |",
+        "| ---: | ---: | ---: | ---: |",
+        f"| {quality_confusion.get('true_accept', 0)} | {quality_confusion.get('true_reject', 0)} | {quality_confusion.get('false_accept', 0)} | {quality_confusion.get('false_reject', 0)} |",
+    ]
+    gate = report.get("quality_gate") or {}
+    if gate:
+        lines.extend(["", "## Quality Gate", "", f"- Passed: `{gate.get('passed')}`"])
+        failures = gate.get("failures") or []
+        if failures:
+            lines.extend(["", "### Gate Failures"])
+            lines.extend(f"- {item.get('message')}" for item in failures)
+    cases = report.get("cases") or []
+    if cases:
+        lines.extend(
+            [
+                "",
+                "## Worst Domain Quality Cases",
+                "",
+                "| Case | Expected | Predicted | Correct | Domain Score | Quality Pass |",
+                "| --- | --- | --- | --- | ---: | --- |",
+            ]
+        )
+        for item in sorted(
+            cases,
+            key=lambda row: float(row.get("domain_quality_score") or 0.0),
+        )[:10]:
+            lines.append(
+                f"| `{item.get('case_id')}` | {item.get('expected_filter')} | {item.get('predicted_filter')} | {item.get('prediction_correct')} | {item.get('domain_quality_score')} | {item.get('domain_quality_passed')} |"
+            )
+    return "\n".join(lines).strip() + "\n"
+
+
 def markdown_for_repair_preview(report: dict[str, Any]) -> str:
     target = report.get("target") or {}
     diagnosis = report.get("diagnosis") or {}
@@ -374,6 +429,8 @@ def write_markdown_report(report: dict[str, Any], path: str | Path, *, kind: str
         content = markdown_for_compare(report)
     elif kind == "repair_preview":
         content = markdown_for_repair_preview(report)
+    elif kind == "validate_labels":
+        content = markdown_for_label_validation(report)
     elif kind in {"bench", "suite"}:
         content = markdown_for_suite(report)
     else:

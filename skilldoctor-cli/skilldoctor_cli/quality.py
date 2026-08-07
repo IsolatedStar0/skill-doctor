@@ -123,6 +123,52 @@ def _trace_evidence_strength(
     return strength, reasons
 
 
+def _puck_reason_signals(reason_text: str, *, has_chart: bool, confidence: float | None) -> dict[str, Any]:
+    text = reason_text.lower()
+    mentions_today = any(token in reason_text for token in ("today", "今日", "当天", "三天"))
+    mentions_history = any(
+        token in reason_text
+        for token in ("day-1", "day-2", "-1", "-2", "历史", "三天", "两天")
+    )
+    shape_terms = (
+        "趋势",
+        "形态",
+        "峰谷",
+        "波动范围",
+        "节奏",
+        "连续",
+        "下行",
+        "走弱",
+        "斜率",
+        "收敛",
+        "起伏",
+    )
+    has_shape_terms = sum(1 for token in shape_terms if token in reason_text) >= 2
+    specific_comparison = mentions_today and mentions_history and has_shape_terms
+
+    range_peak_formula = "波动范围" in reason_text and "峰谷分布" in reason_text
+    weak_similarity = any(token in reason_text for token in ("夹在", "落在", "之间", "低值稀疏"))
+    if (
+        not has_chart
+        and confidence is not None
+        and confidence >= 0.85
+        and range_peak_formula
+        and not any(token in reason_text for token in ("下行", "走弱", "下降", "斜率", "收敛"))
+    ):
+        weak_similarity = True
+
+    return {
+        "specific_comparison": specific_comparison,
+        "weak_similarity": weak_similarity,
+        "reason": (
+            "依据同时比较 today 与历史窗口，并包含趋势/形态/峰谷等形态特征。"
+            if specific_comparison
+            else "依据未充分同时覆盖 today、历史窗口与形态特征。"
+        ),
+        "weak_reason": "依据存在易误判的弱相似性描述，不能支撑高置信降噪。",
+    }
+
+
 def _check(name: str, passed: bool, reason: str, weight: float) -> dict[str, Any]:
     return {
         "name": name,
@@ -150,22 +196,33 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
     verdict_type = _text(business.get("verdict_type") or raw.get("verdict_type")).lower()
     has_filter_decision = isinstance(raw.get("rca_filter"), bool)
     details = business.get("details") if isinstance(business.get("details"), list) else []
+    artifacts = execution.get("artifacts") or {}
+    has_chart = bool(raw.get("chart_url") or business.get("chart_url") or artifacts.get("chart_url"))
     strength, strength_reasons = _trace_evidence_strength(execution, attribution, events)
+    reason_signals = _puck_reason_signals(reason_text, has_chart=has_chart, confidence=confidence)
+    specific_comparison = bool(reason_signals["specific_comparison"])
+    weak_similarity = bool(reason_signals["weak_similarity"])
 
     clear_verdict = bool(verdict or verdict_type or has_filter_decision)
     confidence_valid = confidence is not None and 0.0 <= confidence <= 1.0
-    reasoning_enough = len(reason_text) >= 20 and not reason_text.startswith("{")
-    detail_enough = bool(details) or bool(raw.get("rca_detail"))
-    contract_shape = verdict_type in {"pass", "warning", "fail"} and bool(details)
+    reasoning_enough = len(reason_text) >= 20 and not reason_text.startswith("{") and not weak_similarity
+    detail_enough = bool(details) or bool(raw.get("rca_detail")) or specific_comparison
+    contract_shape = verdict_type in {"pass", "warning", "fail"} and detail_enough
     evidence_available = strength > 0
     confidence_supported = True
     confidence_reason = "confidence 未达到高置信区间，无需额外证据惩罚。"
     if confidence is None:
         confidence_supported = False
         confidence_reason = "缺少 confidence，无法判断置信度与证据是否匹配。"
-    elif confidence >= 0.85 and strength < 2:
+    elif weak_similarity:
         confidence_supported = False
-        confidence_reason = "confidence 较高，但 trace 中可用证据少于 2 类。"
+        confidence_reason = str(reason_signals["weak_reason"])
+    elif confidence >= 0.85 and strength < 2:
+        if specific_comparison:
+            confidence_reason = "高 confidence 虽缺少多类 trace 证据，但依据包含较具体的形态对比。"
+        else:
+            confidence_supported = False
+            confidence_reason = "confidence 较高，但 trace 中可用证据少于 2 类。"
     elif confidence >= 0.85:
         confidence_reason = "高 confidence 有足够 trace 证据支撑。"
 
@@ -189,13 +246,21 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
         _check(
             "has_reasoning",
             reasoning_enough,
-            "输出包含可读的降噪/不降噪依据。" if reasoning_enough else "缺少充分的 RCA 依据说明。",
+            (
+                "输出包含可读且非弱相似性的降噪/不降噪依据。"
+                if reasoning_enough
+                else "缺少充分的 RCA 依据说明，或依据属于弱相似性描述。"
+            ),
             0.20,
         ),
         _check(
             "has_detail_evidence",
             detail_enough,
-            "输出包含 detail/rca_detail 证据。" if detail_enough else "缺少 detail 或 rca_detail。",
+            (
+                "输出包含 detail/rca_detail 证据或较具体的形态对比。"
+                if detail_enough
+                else "缺少 detail、rca_detail 或足够具体的形态对比。"
+            ),
             0.14,
         ),
         _check(
