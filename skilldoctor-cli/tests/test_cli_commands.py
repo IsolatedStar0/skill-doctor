@@ -1126,6 +1126,7 @@ def test_validate_labels_fails_gate_for_false_accepts(tmp_path: Path) -> None:
         ],
     )
     json_out = tmp_path / "validate-labels-fail.json"
+    failures_out = tmp_path / "validate-labels-failures.jsonl"
 
     exit_code = cli_main.main(
         [
@@ -1139,6 +1140,9 @@ def test_validate_labels_fails_gate_for_false_accepts(tmp_path: Path) -> None:
             "0.0",
             "--json-out",
             str(json_out),
+            "--failures-out",
+            str(failures_out),
+            "--include-domain-details",
             "--quiet",
         ]
     )
@@ -1151,6 +1155,18 @@ def test_validate_labels_fails_gate_for_false_accepts(tmp_path: Path) -> None:
         "quality_accuracy",
         "false_accept_rate",
     ]
+    assert report["failures_path"] == str(failures_out)
+    assert report["failure_analysis"]["by_type"] == {"false_accept": 1}
+    assert "domain_quality" in report["cases"][0]
+    failures = [json.loads(line) for line in failures_out.read_text(encoding="utf-8").splitlines()]
+    assert len(failures) == 1
+    failure = failures[0]
+    assert failure["case_id"] == "false-accept"
+    assert failure["failure_type"] == "false_accept"
+    assert failure["root_cause"] == "native_evidence_missing"
+    assert failure["recommended_action"] == "rerun_with_native_evidence"
+    assert "today_vs_day1_similar" in failure["missing_required_checks"]
+    assert "domain_quality" in failure
 
 
 def test_bench_loads_jsonl_skips_comments_and_returns_failure_code(

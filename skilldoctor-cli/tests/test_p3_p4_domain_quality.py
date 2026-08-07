@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from skilldoctor_cli.commands.validate_labels import _evaluate_records
 from skilldoctor_cli.evidence.profiles import get_skill_profile
 from skilldoctor_cli.quality import score_state
@@ -72,6 +75,48 @@ def test_puck_history_gap_rejects_filter_but_not_conservative_no_filter() -> Non
     assert any("历史证据缺口" in finding for finding in bad["findings"])
     assert conservative["domain_quality_score"] >= 0.75
     assert conservative["domain_quality_passed"] is True
+
+
+def test_validate_labels_uses_native_evidence_refs_for_trace_support(tmp_path: Path) -> None:
+    native_path = tmp_path / "native-evidence.json"
+    native_path.write_text(
+        json.dumps(
+            {
+                "native_evidence": {
+                    "windows": {
+                        "today": {"raw_mcp_output_path": "today-mcp.json"},
+                        "day-1": {"raw_mcp_output_path": "day-1-mcp.json"},
+                        "day-2": {"raw_mcp_output_path": "day-2-mcp.json"},
+                    }
+                },
+                "bridge_status": {"trace_dir": "trace-dir"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    for artifact in ("today-mcp.json", "day-1-mcp.json", "day-2-mcp.json"):
+        (tmp_path / artifact).write_text("{}", encoding="utf-8")
+    (tmp_path / "trace-dir").mkdir()
+    record = _native_puck_record(
+        case_id="native-evidence-supported",
+        decision=False,
+        quality="good",
+        content="不建议降噪；today 与 day-1/day-2 趋势、形态、峰谷明显背离，保留告警。",
+    )
+    record["native_evidence_path"] = native_path.name
+
+    report, _ = _evaluate_records(
+        [record],
+        domain_quality_threshold=0.75,
+        label_base_dir=tmp_path,
+    )
+
+    case = report["cases"][0]
+    assert case["domain_quality_passed"] is True
+    assert not any("trace 中缺少可用证据支撑" in finding for finding in case["findings"])
+    assert any(ref.startswith("native_evidence:") for ref in case["evidence_refs"])
+    assert any(ref.startswith("trace_dir:") for ref in case["evidence_refs"])
 
 
 def test_release_checklist_profile_and_domain_scorer_reject_failed_fixture() -> None:
