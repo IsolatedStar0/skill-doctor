@@ -247,6 +247,117 @@ def _truncate_text(value: str, limit: int = 200) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+def _as_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "1", "是", "是噪声", "应该降噪"}:
+            return True
+        if normalized in {"false", "no", "0", "否", "不是噪声", "不应该降噪"}:
+            return False
+    return None
+
+
+def _as_float(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _puck_detail_items(result: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    details = result.get("rca_detail") or result.get("details") or []
+    if not isinstance(details, list):
+        return []
+    return [item for item in details if isinstance(item, Mapping)]
+
+
+def _puck_evidence_from_result(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Build the generic evidence contract for legacy puck-rule-rca output.
+
+    This keeps the AIME-side bridge stdlib-only while ensuring older skill
+    outputs (``rca_filter`` / ``rca_detail`` / ``chart_url``) are upgraded to
+    the shared ``evidence.checks/artifacts/metrics`` shape consumed by
+    SkillDoctor profiles.
+    """
+
+    if isinstance(result.get("evidence"), Mapping):
+        return None
+    if not any(key in result for key in ("rca_filter", "rca_detail", "is_regular", "skill_noise_result")):
+        return None
+
+    details = _puck_detail_items(result)
+    detail_regular_values = [_as_bool(item.get("is_regular")) for item in details]
+    detail_filter_values = [_as_bool(item.get("filter")) for item in details]
+    regular_values = [value for value in detail_regular_values if value is not None]
+    filter_values = [value for value in detail_filter_values if value is not None]
+
+    history_regular = all(regular_values) if regular_values else _as_bool(result.get("is_regular"))
+    rca_filter = _as_bool(result.get("rca_filter"))
+    if rca_filter is None:
+        rca_filter = _as_bool(result.get("filter")) or _as_bool(result.get("skill_noise_result"))
+    similarity_passed = all(filter_values) if filter_values else rca_filter
+
+    confidence = _as_float(result.get("confidence"))
+    similarity_score = confidence if confidence is not None else None
+    checks: list[dict[str, Any]] = []
+    if history_regular is not None:
+        checks.append(
+            {
+                "name": "history_regular",
+                "passed": history_regular,
+                "score": similarity_score,
+                "severity": "high",
+                "reason": "从 puck-rule-rca is_regular/rca_detail 推导历史窗口是否规律。",
+            }
+        )
+    if similarity_passed is not None:
+        reason = "从 puck-rule-rca filter/rca_filter 推导 today 与历史窗口是否相似。"
+        checks.extend(
+            [
+                {
+                    "name": "today_vs_day1_similar",
+                    "passed": similarity_passed,
+                    "score": similarity_score,
+                    "severity": "critical",
+                    "reason": reason,
+                },
+                {
+                    "name": "today_vs_day2_similar",
+                    "passed": similarity_passed,
+                    "score": similarity_score,
+                    "severity": "critical",
+                    "reason": reason,
+                },
+            ]
+        )
+
+    artifacts: list[dict[str, Any]] = []
+    chart_urls = [result.get("chart_url")]
+    chart_urls.extend(item.get("chart_url") for item in details)
+    for index, chart_url in enumerate(url for url in chart_urls if url):
+        artifacts.append({"type": "chart", "url": str(chart_url), "name": f"chart-{index + 1}"})
+
+    metrics: dict[str, Any] = {}
+    if similarity_score is not None:
+        metrics["shape_similarity_score"] = similarity_score
+
+    if not checks and not artifacts and not metrics:
+        return None
+    return {"checks": checks, "artifacts": artifacts, "metrics": metrics}
+
+
+def _with_generic_evidence(result: Mapping[str, Any]) -> dict[str, Any]:
+    enriched = dict(result)
+    evidence = _puck_evidence_from_result(enriched)
+    if evidence is not None:
+        enriched["evidence"] = evidence
+    return enriched
+
+
 def normalize_business_result(business_result: Any) -> Any:
     """Normalize arbitrary skill business output into skill-doctor contract.
 
@@ -276,6 +387,9 @@ def normalize_business_result(business_result: Any) -> Any:
             confidence = normalized.get("confidence")
             if not isinstance(confidence, (int, float)):
                 normalized["confidence"] = None
+            raw = normalized["extra"].get("raw_business_result")
+            if isinstance(raw, Mapping):
+                normalized["extra"]["raw_business_result"] = _with_generic_evidence(raw)
             return normalized
 
         summary_parts: list[str] = []
@@ -300,6 +414,7 @@ def normalize_business_result(business_result: Any) -> Any:
         elif isinstance(business_result.get("ok"), bool):
             inferred_type = "pass" if business_result.get("ok") else "fail"
 
+        raw_business_result = _with_generic_evidence(business_result)
         confidence = business_result.get("confidence")
         normalized_confidence = confidence if isinstance(confidence, (int, float)) else None
         return {
@@ -313,7 +428,7 @@ def normalize_business_result(business_result: Any) -> Any:
                     "reason": _truncate_text(summary_parts[0]),
                 }
             ],
-            "extra": {"raw_business_result": dict(business_result)},
+            "extra": {"raw_business_result": raw_business_result},
         }
 
     try:

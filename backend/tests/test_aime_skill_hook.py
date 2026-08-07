@@ -105,6 +105,45 @@ def test_push_to_skill_doctor_wraps_legacy_business_result_shape(
     }
     assert normalized["extra"]["raw_business_result"]["rca_filter"] is False
     assert normalized["extra"]["raw_business_result"]["rca_detail"] == [{"group_detail_name": "default"}]
+    evidence = normalized["extra"]["raw_business_result"]["evidence"]
+    assert [item["name"] for item in evidence["checks"]] == [
+        "today_vs_day1_similar",
+        "today_vs_day2_similar",
+    ]
+    assert all(item["passed"] is False for item in evidence["checks"])
+    assert evidence["metrics"] == {"shape_similarity_score": 0.58}
+
+
+def test_normalize_business_result_adds_generic_evidence_for_puck_rca_detail() -> None:
+    normalized = aime_skill_hook.normalize_business_result(
+        {
+            "rca_filter": True,
+            "rca_content": "当前异常波动和发布无关，需要降噪",
+            "rca_detail": [
+                {
+                    "group_detail_name": "default",
+                    "is_regular": True,
+                    "filter": True,
+                    "rationale": "today 与 day-1/day-2 峰谷节奏一致。",
+                    "chart_url": "https://example.com/chart.png",
+                }
+            ],
+            "confidence": 0.91,
+        }
+    )
+
+    raw = normalized["extra"]["raw_business_result"]
+    evidence = raw["evidence"]
+    assert [item["name"] for item in evidence["checks"]] == [
+        "history_regular",
+        "today_vs_day1_similar",
+        "today_vs_day2_similar",
+    ]
+    assert all(item["passed"] is True for item in evidence["checks"])
+    assert evidence["artifacts"] == [
+        {"type": "chart", "url": "https://example.com/chart.png", "name": "chart-1"}
+    ]
+    assert evidence["metrics"] == {"shape_similarity_score": 0.91}
 
 
 def test_push_to_skill_doctor_standardizes_trace_metadata_without_dropping_aime_ids(
@@ -235,19 +274,23 @@ def test_write_trace_dir_records_aime_run_for_cli_ingest(tmp_path) -> None:
     ]
     assert model_messages[0]["role"] == "assistant"
     business_result = json.loads((trace_dir / "business_result.json").read_text(encoding="utf-8"))
-    assert business_result == {
-        "verdict": '{"confidence": 0.64, "rca_filter": true}',
-        "verdict_type": "pass",
-        "confidence": 0.64,
-        "details": [
-            {
-                "name": "business_result",
-                "status": "pass",
-                "reason": '{"confidence": 0.64, "rca_filter": true}',
-            }
-        ],
-        "extra": {"raw_business_result": {"rca_filter": True, "confidence": 0.64}},
-    }
+    assert business_result["verdict"] == '{"confidence": 0.64, "rca_filter": true}'
+    assert business_result["verdict_type"] == "pass"
+    assert business_result["confidence"] == 0.64
+    assert business_result["details"] == [
+        {
+            "name": "business_result",
+            "status": "pass",
+            "reason": '{"confidence": 0.64, "rca_filter": true}',
+        }
+    ]
+    raw = business_result["extra"]["raw_business_result"]
+    assert raw["rca_filter"] is True
+    assert raw["confidence"] == 0.64
+    assert [item["name"] for item in raw["evidence"]["checks"]] == [
+        "today_vs_day1_similar",
+        "today_vs_day2_similar",
+    ]
 
 
 def test_write_trace_dir_skips_empty_trace(tmp_path, capsys) -> None:
