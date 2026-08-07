@@ -870,6 +870,155 @@ def test_evaluate_penalizes_weak_similarity_puck_rule_rca_claim(
     assert any("弱相似性" in finding for finding in domain["findings"])
 
 
+def test_evaluate_penalizes_structured_similarity_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "structured-mismatch-puck-rule-rca-trace.json", {"skill_id": "puck-rule-rca"})
+    json_out = tmp_path / "evaluate-structured-mismatch-domain.json"
+    state = {
+        "run_id": "lg-test-structured-mismatch-puck-rca",
+        "status": "passed",
+        "skill_id": "puck-rule-rca",
+        "skill_version": "1.0.0",
+        "business_result": {
+            "verdict": "today 与 day-1/day-2 趋势形态相似，波动范围和峰谷分布一致。",
+            "verdict_type": "pass",
+            "confidence": 0.92,
+            "details": [{"name": "chart_evidence", "status": "pass", "reason": "提供了图表证据。"}],
+            "extra": {
+                "raw_business_result": {
+                    "rca_filter": True,
+                    "rca_content": "today 与 day-1/day-2 趋势形态相似，波动范围和峰谷分布一致。",
+                    "confidence": 0.92,
+                    "rca_detail": [{"name": "chart_evidence"}],
+                    "chart_url": "https://example.com/structured-mismatch.png",
+                    "shape_evidence": {
+                        "history_regular": True,
+                        "today_vs_day1_similar": False,
+                        "today_vs_day2_similar": True,
+                    },
+                }
+            },
+        },
+        "execution": {
+            "passed": True,
+            "pass_rate": 1.0,
+            "duration_ms": 1_000,
+            "assertions": [],
+            "artifacts": {"chart_url": "https://example.com/structured-mismatch.png"},
+            "runtime_events": [
+                {"stage": "agent.analyze.tool_calls", "status": "completed", "metadata": {"total": 1}}
+            ],
+        },
+        "attribution": {"cause": "none", "action": "none", "evidence_refs": ["artifact:chart_url"]},
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.50",
+            "--min-domain-quality",
+            "0.75",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_QUALITY_GATE_FAILED
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    domain = report["quality"]["domain_quality"]
+    assert domain["score"] < 0.75
+    assert any("结构化相似性证据不支持降噪" in finding for finding in domain["findings"])
+    assert domain["evidence_profile"] == "puck-rule-rca"
+    assert domain["evidence_score"]["available"] is True
+    assert "today_vs_day1_similar" in domain["evidence_score"]["failed_checks"]
+
+
+def test_evaluate_scores_generic_evidence_contract_for_puck_rule_rca(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from skilldoctor_cli.commands import evaluate
+
+    trace_path = _write_json(tmp_path / "generic-evidence-puck-rule-rca-trace.json", {"skill_id": "puck-rule-rca"})
+    json_out = tmp_path / "evaluate-generic-evidence-domain.json"
+    state = {
+        "run_id": "lg-test-generic-evidence-puck-rca",
+        "status": "passed",
+        "skill_id": "puck-rule-rca",
+        "skill_version": "1.0.0",
+        "business_result": {
+            "verdict": "today 与 day-1/day-2 连续下行，峰谷节奏一致，尾部收敛形态基本一致。",
+            "verdict_type": "pass",
+            "confidence": 0.91,
+            "details": [],
+            "extra": {
+                "raw_business_result": {
+                    "rca_filter": True,
+                    "rca_content": "today 与 day-1/day-2 连续下行，峰谷节奏一致，尾部收敛形态基本一致。",
+                    "confidence": 0.91,
+                    "evidence": {
+                        "checks": [
+                            {"name": "history_regular", "passed": True, "score": 0.95, "severity": "high"},
+                            {"name": "today_vs_day1_similar", "passed": True, "score": 0.90, "severity": "critical"},
+                            {"name": "today_vs_day2_similar", "passed": True, "score": 0.88, "severity": "critical"},
+                        ],
+                        "artifacts": [{"type": "chart", "url": "https://example.com/chart.png"}],
+                        "metrics": {"shape_similarity_score": 0.89},
+                    },
+                }
+            },
+        },
+        "execution": {"passed": True, "pass_rate": 1.0, "duration_ms": 1_000, "assertions": [], "runtime_events": []},
+        "attribution": {"cause": "none", "action": "none"},
+    }
+
+    monkeypatch.setattr(evaluate, "backend_modules", _fake_backend_modules)
+    monkeypatch.setattr(
+        evaluate,
+        "new_run_service",
+        lambda project_root: SimpleNamespace(ingest_trace=lambda request: state),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--project-root",
+            str(tmp_path),
+            "evaluate",
+            str(trace_path),
+            "--min-score",
+            "0.50",
+            "--min-domain-quality",
+            "0.90",
+            "--json-out",
+            str(json_out),
+            "--quiet",
+        ]
+    )
+
+    assert exit_code == EXIT_OK
+    report = json.loads(json_out.read_text(encoding="utf-8"))
+    domain = report["quality"]["domain_quality"]
+    assert domain["evidence_score"]["score"] == 1.0
+    assert domain["evidence_score"]["passed"] is True
+    assert domain["evidence_score"]["metrics"] == {"shape_similarity_score": 0.89}
+
+
 def test_validate_labels_reports_prediction_and_quality_metrics(tmp_path: Path) -> None:
     labels_path = _write_jsonl(
         tmp_path / "labels.jsonl",

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .evidence import get_skill_profile, normalize_evidence_bundle, score_evidence_bundle
+
 
 BASE_DIMENSION_NAMES = (
     "output_quality",
@@ -124,7 +126,6 @@ def _trace_evidence_strength(
 
 
 def _puck_reason_signals(reason_text: str, *, has_chart: bool, confidence: float | None) -> dict[str, Any]:
-    text = reason_text.lower()
     mentions_today = any(token in reason_text for token in ("today", "今日", "当天", "三天"))
     mentions_history = any(
         token in reason_text
@@ -200,15 +201,26 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
     has_chart = bool(raw.get("chart_url") or business.get("chart_url") or artifacts.get("chart_url"))
     strength, strength_reasons = _trace_evidence_strength(execution, attribution, events)
     reason_signals = _puck_reason_signals(reason_text, has_chart=has_chart, confidence=confidence)
+    profile = get_skill_profile(skill_id)
+    evidence_bundle = normalize_evidence_bundle(business, raw)
+    evidence_score = score_evidence_bundle(evidence_bundle, profile, confidence=confidence)
     specific_comparison = bool(reason_signals["specific_comparison"])
-    weak_similarity = bool(reason_signals["weak_similarity"])
+    structured_inconsistent = bool(
+        evidence_score.get("failed_checks") or evidence_score.get("failed_critical_checks")
+    )
+    weak_similarity = bool(reason_signals["weak_similarity"]) or structured_inconsistent
 
     clear_verdict = bool(verdict or verdict_type or has_filter_decision)
     confidence_valid = confidence is not None and 0.0 <= confidence <= 1.0
     reasoning_enough = len(reason_text) >= 20 and not reason_text.startswith("{") and not weak_similarity
     detail_enough = bool(details) or bool(raw.get("rca_detail")) or specific_comparison
     contract_shape = verdict_type in {"pass", "warning", "fail"} and detail_enough
-    evidence_available = strength > 0
+    if evidence_score["available"]:
+        evidence_reason = "结构化 evidence score=" + f"{float(evidence_score['score']):.2f}"
+        if evidence_score.get("findings"):
+            evidence_reason += "；" + "；".join(str(item) for item in evidence_score["findings"])
+        strength_reasons = [*strength_reasons, evidence_reason]
+    evidence_available = strength > 0 or bool(evidence_score["available"])
     confidence_supported = True
     confidence_reason = "confidence 未达到高置信区间，无需额外证据惩罚。"
     if confidence is None:
@@ -216,7 +228,13 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
         confidence_reason = "缺少 confidence，无法判断置信度与证据是否匹配。"
     elif weak_similarity:
         confidence_supported = False
-        confidence_reason = str(reason_signals["weak_reason"])
+        confidence_reason = (
+            "结构化相似性证据不支持降噪："
+            + ", ".join(evidence_score.get("failed_checks") or evidence_score.get("failed_critical_checks") or [])
+            + "。"
+            if structured_inconsistent
+            else str(reason_signals["weak_reason"])
+        )
     elif confidence >= 0.85 and strength < 2:
         if specific_comparison:
             confidence_reason = "高 confidence 虽缺少多类 trace 证据，但依据包含较具体的形态对比。"
@@ -290,6 +308,8 @@ def _score_puck_rule_rca_domain(state: dict[str, Any]) -> dict[str, Any] | None:
         "passed": _clamp(score) >= 0.75,
         "confidence": confidence,
         "trace_evidence_strength": strength,
+        "evidence_profile": profile.skill_id,
+        "evidence_score": evidence_score,
         "checks": checks,
         "findings": [item["reason"] for item in failed],
     }
